@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const transporter = nodemailer.createTransport({
+export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: process.env.SMTP_PORT,
   secure: false,
@@ -13,4 +13,11 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-export default transporter;
+transporter.verify((error, success) => {
+  if (error) {
+    console.error("Erro ao configurar e-mail:", error);
+  } else {
+    console.log("Servidor de e-mail pronto!");
+  }
+});
+

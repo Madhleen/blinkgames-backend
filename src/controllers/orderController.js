@@ -2,7 +2,8 @@ import Order from "../models/Order.js";
 import Raffle from "../models/Raffle.js";
 import User from "../models/User.js";
 import { gerarNumerosUnicos } from "../utils/numberGenerator.js";
-import { mercadopagoClient } from "../config/mercadoPago.js";
+import mercadopagoClient from "../config/mercadoPago.js";
+
 
 // 🔹 Criar ordem e preference no Mercado Pago
 export const createCheckout = async (req, res) => {

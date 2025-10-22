@@ -1,7 +1,8 @@
 import Order from "../models/Order.js";
 import Raffle from "../models/Raffle.js";
 import User from "../models/User.js";
-import { mercadopagoClient } from "../config/mercadoPago.js";
+import mercadopagoClient from "../config/mercadoPago.js";
+
 
 // 🔹 Recebe notificações do Mercado Pago
 export const handleMercadoPagoWebhook = async (req, res) => {

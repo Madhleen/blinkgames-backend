@@ -11,21 +11,38 @@ const JWT_SECRET = process.env.JWT_SECRET;
 // 🔹 Cadastro
 export const register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    // Aceita tanto os nomes em português quanto inglês
+    const nome = req.body.nome || req.body.name;
+    const email = req.body.email;
+    const senha = req.body.senha || req.body.password;
+    const cpf = req.body.cpf;
+    const telefone = req.body.telefone;
+
+    if (!nome || !email || !senha)
+      return res.status(400).json({ error: "Preencha todos os campos obrigatórios." });
 
     const existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ error: "Usuário já existe" });
+    if (existingUser)
+      return res.status(400).json({ error: "Usuário já existe." });
 
-    const hash = await bcrypt.hash(password, 10);
-    const user = new User({ name, email, password: hash });
+    const hash = await bcrypt.hash(senha, 10);
+    const user = new User({
+      name: nome,
+      email,
+      password: hash,
+      cpf,
+      telefone
+    });
+
     await user.save();
-
     res.status(201).json({ message: "Usuário cadastrado com sucesso!" });
+
   } catch (err) {
-    console.error(err);
+    console.error("Erro no cadastro:", err);
     res.status(500).json({ error: "Erro ao registrar usuário" });
   }
 };
+
 
 // 🔹 Login
 export const login = async (req, res) => {

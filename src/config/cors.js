@@ -10,13 +10,12 @@ const corsOptions = {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.warn("❌ CORS bloqueado para origem:", origin);
       callback(new Error("Origem não permitida pelo CORS"));
     }
   },
   credentials: true,
   optionsSuccessStatus: 200,
-
-  // 🧩 adicione isto ↓
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "x-admin-key"],
 };

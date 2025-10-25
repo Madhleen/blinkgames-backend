@@ -7,6 +7,7 @@ export const getRaffles = async (req, res) => {
     const rifas = await Raffle.find({ active: true }).sort({ createdAt: -1 });
     res.json(rifas);
   } catch (err) {
+    console.error("Erro ao buscar rifas:", err);
     res.status(500).json({ error: "Erro ao buscar rifas" });
   }
 };
@@ -18,6 +19,7 @@ export const getRaffleById = async (req, res) => {
     if (!rifa) return res.status(404).json({ error: "Rifa não encontrada" });
     res.json(rifa);
   } catch (err) {
+    console.error("Erro ao buscar rifa:", err);
     res.status(500).json({ error: "Erro ao buscar rifa" });
   }
 };
@@ -25,18 +27,37 @@ export const getRaffleById = async (req, res) => {
 // 🔹 Criar nova rifa (apenas admin)
 export const createRaffle = async (req, res) => {
   try {
-    const { title, description, image, price, totalNumbers, drawDate } = req.body;
-    const novaRifa = new Raffle({
+    // aceita tanto em português quanto em inglês
+    const {
+      titulo,
+      descricao,
+      imagem,
+      preco,
+      maxNumeros,
+      dataSorteio,
       title,
       description,
       image,
       price,
       totalNumbers,
       drawDate,
+      ativo
+    } = req.body;
+
+    const novaRifa = new Raffle({
+      title: title || titulo,
+      description: description || descricao,
+      image: image || imagem,
+      price: price || preco,
+      totalNumbers: totalNumbers || maxNumeros,
+      drawDate: drawDate || dataSorteio,
+      active: ativo ?? true
     });
+
     await novaRifa.save();
     res.status(201).json(novaRifa);
   } catch (err) {
+    console.error("Erro ao criar rifa:", err);
     res.status(500).json({ error: "Erro ao criar rifa" });
   }
 };
@@ -48,6 +69,7 @@ export const updateRaffle = async (req, res) => {
     if (!updated) return res.status(404).json({ error: "Rifa não encontrada" });
     res.json(updated);
   } catch (err) {
+    console.error("Erro ao atualizar rifa:", err);
     res.status(500).json({ error: "Erro ao atualizar rifa" });
   }
 };
@@ -59,6 +81,7 @@ export const deactivateRaffle = async (req, res) => {
     if (!updated) return res.status(404).json({ error: "Rifa não encontrada" });
     res.json({ message: "Rifa desativada com sucesso!" });
   } catch (err) {
+    console.error("Erro ao desativar rifa:", err);
     res.status(500).json({ error: "Erro ao desativar rifa" });
   }
 };
@@ -74,6 +97,9 @@ export const generateNumbers = async (req, res) => {
     const numerosGerados = gerarNumerosUnicos(quantidade, rifa.totalNumbers, rifa.soldNumbers);
     res.json({ numeros: numerosGerados });
   } catch (err) {
+    console.error("Erro ao gerar números:", err);
     res.status(500).json({ error: "Erro ao gerar números" });
   }
 };
+
+

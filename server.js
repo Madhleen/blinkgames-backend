@@ -20,6 +20,35 @@ const app = express();
 
 // Middlewares principais
 app.use(express.json());
+// ✅ Libera CORS manualmente para todas as origens permitidas
+app.use((req, res, next) => {
+  const allowedOrigins = [
+    "https://blinkgamesrifa.vercel.app",
+    "https://blinkgames-frontend.vercel.app",
+    "http://localhost:5173",
+  ];
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, DELETE, OPTIONS"
+  );
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, x-admin-key"
+  );
+  res.header("Access-Control-Allow-Credentials", "true");
+
+  // Se for requisição de preflight (OPTIONS), retorna 200 direto
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+
+  next();
+});
+
 app.use(cors(corsOptions));
 app.use(helmet());
 app.use(morgan("dev"));

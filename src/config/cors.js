@@ -15,8 +15,11 @@ const corsOptions = {
   },
   credentials: true,
   optionsSuccessStatus: 200,
+
+  // 🧩 adicione isto ↓
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-admin-key"],
 };
 
 export default corsOptions;
-
 

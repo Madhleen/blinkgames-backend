@@ -2,19 +2,26 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export const adminMiddleware = (req, res, next) => {
-  const queryKey = req.query.key;
-  const bodyKey = req.body?.key;
+  // aceita por header OU por querystring
   const headerKey = req.header("x-admin-key");
-  const validKey = process.env.ADMIN_KEY;
+  const queryKey  = req.query.key;
 
-  if (queryKey === validKey || bodyKey === validKey || headerKey === validKey) {
+  const okByKey =
+    (headerKey && headerKey === process.env.ADMIN_KEY) ||
+    (queryKey  && queryKey  === process.env.ADMIN_KEY);
+
+  if (okByKey) {
+    // marca como admin e segue
+    req.user = { ...(req.user || {}), isAdmin: true, via: "key" };
     return next();
   }
 
-  if (!req.user || !req.user.isAdmin) {
-    return res.status(403).json({ error: "Acesso negado. Permissão de admin necessária." });
+  // caminho alternativo: JWT com flag de admin
+  if (req.user && (req.user.isAdmin || req.user.role === "admin")) {
+    return next();
   }
 
-  next();
+  return res.status(401).json({ error: "Unauthorized" });
 };
+
 

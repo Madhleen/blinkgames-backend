@@ -7,25 +7,25 @@ import {
   exportCSV,
 } from "../controllers/adminController.js";
 
-import { createRaffle } from "../controllers/raffleController.js";// ✅ importa função que já cria rifas
-import { authMiddleware } from "../middleware/auth.js";
+import { createRaffle } from "../controllers/raffleController.js";
 import { adminMiddleware } from "../middleware/admin.js";
 
 const router = express.Router();
 
 // 🔹 Dashboard
-router.get("/dashboard", authMiddleware, adminMiddleware, getDashboard);
+router.get("/dashboard", adminMiddleware, getDashboard);
 
 // 🔹 Listagens
-router.get("/users", authMiddleware, adminMiddleware, listUsers);
-router.get("/raffles", authMiddleware, adminMiddleware, listRaffles);
-router.get("/payments", authMiddleware, adminMiddleware, listPayments);
+router.get("/users", adminMiddleware, listUsers);
+router.get("/raffles", adminMiddleware, listRaffles);
+router.get("/payments", adminMiddleware, listPayments);
 
 // 🔹 Exportação CSV
-router.get("/export", authMiddleware, adminMiddleware, exportCSV);
+router.get("/export", adminMiddleware, exportCSV);
 
-// ✅ NOVA ROTA: criação de rifas com chave admin
+// 🔹 Criação de rifas com chave admin
 router.post("/rifas", adminMiddleware, createRaffle);
 
 export default router;
+
 

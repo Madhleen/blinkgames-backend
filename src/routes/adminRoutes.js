@@ -7,7 +7,7 @@ import {
   exportCSV,
 } from "../controllers/adminController.js";
 
-import { createRaffle } from "../controllers/rifaController.js"; // ✅ importa função que já cria rifas
+import { createRaffle } from "../controllers/raffleController.js";// ✅ importa função que já cria rifas
 import { authMiddleware } from "../middleware/auth.js";
 import { adminMiddleware } from "../middleware/admin.js";
 

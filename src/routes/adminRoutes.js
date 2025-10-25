@@ -7,6 +7,7 @@ import {
   exportCSV,
 } from "../controllers/adminController.js";
 
+import { createRaffle } from "../controllers/rifaController.js"; // ✅ importa função que já cria rifas
 import { authMiddleware } from "../middleware/auth.js";
 import { adminMiddleware } from "../middleware/admin.js";
 
@@ -23,4 +24,8 @@ router.get("/payments", authMiddleware, adminMiddleware, listPayments);
 // 🔹 Exportação CSV
 router.get("/export", authMiddleware, adminMiddleware, exportCSV);
 
+// ✅ NOVA ROTA: criação de rifas com chave admin
+router.post("/rifas", adminMiddleware, createRaffle);
+
 export default router;
+

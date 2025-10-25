@@ -1,13 +1,12 @@
-import dotenv from "dotenv";
-dotenv.config();
+import cors from "cors";
 
 const allowedOrigins = [
-  process.env.BASE_URL_FRONTEND,
-  "http://localhost:5173"
+  "https://blinkgamesrifa.vercel.app", // seu frontend
+  "http://localhost:5173",             // ambiente local (vite)
 ];
 
-const corsOptions = {
-  origin: (origin, callback) => {
+app.use(cors({
+  origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -15,7 +14,5 @@ const corsOptions = {
     }
   },
   credentials: true,
-  optionsSuccessStatus: 200,
-};
+}));
 
-export default corsOptions;

@@ -1,12 +1,12 @@
-import cors from "cors";
-
+// src/config/cors.js
 const allowedOrigins = [
-  "https://blinkgamesrifa.vercel.app", // seu frontend
-  "http://localhost:5173",             // ambiente local (vite)
+  "https://blinkgamesrifa.vercel.app",
+  "https://blinkgames-frontend.vercel.app",
+  "http://localhost:5173",
 ];
 
-app.use(cors({
-  origin: function (origin, callback) {
+const corsOptions = {
+  origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -14,5 +14,9 @@ app.use(cors({
     }
   },
   credentials: true,
-}));
+  optionsSuccessStatus: 200,
+};
+
+export default corsOptions;
+
 

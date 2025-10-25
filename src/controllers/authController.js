@@ -65,7 +65,7 @@ export const login = async (req, res) => {
 export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select("+password");
     if (!user) return res.status(404).json({ error: "Usuário não encontrado" });
 
     const token = crypto.randomBytes(32).toString("hex");

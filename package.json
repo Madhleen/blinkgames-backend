@@ -8,9 +8,17 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "seed": "node src/seed/seedRaffles.js",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "keep-alive": "node keep-alive.js"
   },
-  "keywords": ["rifas", "mercado pago", "express", "mongodb", "nodemailer", "blinkgames"],
+  "keywords": [
+    "rifas",
+    "mercado pago",
+    "express",
+    "mongodb",
+    "nodemailer",
+    "blinkgames"
+  ],
   "author": "BlinkGames Dev",
   "license": "MIT",
   "dependencies": {
@@ -25,7 +33,8 @@
     "morgan": "^1.10.0",
     "nodemailer": "^6.9.8",
     "mercadopago": "^2.8.0",
-    "validator": "^13.11.0"
+    "validator": "^13.11.0",
+    "node-fetch": "^3.3.2"
   },
   "devDependencies": {
     "jest": "^29.7.0",
@@ -33,3 +42,6 @@
     "supertest": "^7.1.0"
   }
 }
+
+
+

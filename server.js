@@ -58,7 +58,7 @@ connectDB();
 
 // Rotas principais
 app.use("/api/auth", authRoutes);
-app.use("/api/rifas", raffleRoutes);
+app.use("/api/raffles", raffleRoutes);
 app.use("/api/order", orderRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/webhooks", webhookRoutes);

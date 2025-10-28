@@ -1,17 +1,19 @@
 // ============================================================
-// 💳 BlinkGames — Mercado Pago Config (v3.2 corrigido e padronizado)
+// 💳 BlinkGames — config/mercadoPago.js (versão corrigida)
 // ============================================================
-
 import { MercadoPagoConfig, Preference } from "mercadopago";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-// 🔹 Cria o cliente global usando o Access Token
+// 🔹 Cria o cliente global Mercado Pago
 const client = new MercadoPagoConfig({
   accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN,
 });
 
-// 🔹 Exporta a classe Preference (não a instância)
-export { client, Preference };
+// 🔹 Instância de Preference vinculada ao client
+const preference = new Preference(client);
+
+// 🔹 Exportações consistentes com o controller
+export { client, preference };
 

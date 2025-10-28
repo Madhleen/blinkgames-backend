@@ -1,7 +1,7 @@
 import Order from "../models/Order.js";
 import Raffle from "../models/Raffle.js";
 import User from "../models/User.js";
-iimport { client, Preference } from "../config/mercadopago.js";
+import { client, Preference } from "../config/mercadoPago.js";
 
 
 

@@ -2,7 +2,7 @@ import Order from "../models/Order.js";
 import Raffle from "../models/Raffle.js";
 import User from "../models/User.js";
 import { gerarNumerosUnicos } from "../utils/numberGenerator.js";
-import { client, Preference } from "../config/mercadoPago.js";
+import { client, preference } from "../config/mercadoPago.js";
 
 
 

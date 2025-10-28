@@ -1,3 +1,7 @@
+// ============================================================
+// 💳 BlinkGames — Mercado Pago Config (v3.2 corrigido e padronizado)
+// ============================================================
+
 import { MercadoPagoConfig, Preference } from "mercadopago";
 import dotenv from "dotenv";
 
@@ -8,8 +12,6 @@ const client = new MercadoPagoConfig({
   accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN,
 });
 
-// 🔹 Exporta a instância de Preference com o client configurado
-const preference = new Preference(client);
-
-export { client, preference };
+// 🔹 Exporta a classe Preference (não a instância)
+export { client, Preference };
 

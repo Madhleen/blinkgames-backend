@@ -1,16 +1,27 @@
 import Raffle from "../models/Raffle.js";
 import { gerarNumerosUnicos } from "../utils/numberGenerator.js";
 
-// 🔹 Listar rifas ativas
+// 🔹 Listar rifas ativas (PS5 vem primeiro)
 export const getRaffles = async (req, res) => {
   try {
-    const rifas = await Raffle.find({ active: true }).sort({ createdAt: -1 });
-    res.json(rifas);
+    const rifas = await Raffle.find({ active: true });
+
+    // Reordena para colocar o PS5 primeiro
+    const ordenadas = rifas.sort((a, b) => {
+      const aTitle = (a.title || a.titulo || "").toLowerCase();
+      const bTitle = (b.title || b.titulo || "").toLowerCase();
+      if (aTitle.includes("ps5")) return -1;
+      if (bTitle.includes("ps5")) return 1;
+      return 0;
+    });
+
+    res.json(ordenadas);
   } catch (err) {
     console.error("Erro ao buscar rifas:", err);
     res.status(500).json({ error: "Erro ao buscar rifas" });
   }
 };
+
 
 // 🔹 Detalhar uma rifa
 export const getRaffleById = async (req, res) => {

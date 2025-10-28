@@ -13,6 +13,8 @@ import raffleRoutes from "./src/routes/raffleRoutes.js";
 import orderRoutes from "./src/routes/orderRoutes.js";
 import adminRoutes from "./src/routes/adminRoutes.js";
 import webhookRoutes from "./src/routes/webhookRoutes.js";
+import checkoutRoutes from "./src/routes/checkoutRoutes.js";
+
 
 // Configurações iniciais
 dotenv.config();
@@ -62,6 +64,8 @@ app.use("/api/raffles", raffleRoutes);
 app.use("/api/order", orderRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/webhooks", webhookRoutes);
+app.use("/api/checkout", checkoutRoutes);
+
 
 // Rota padrão
 app.get("/", (req, res) => {

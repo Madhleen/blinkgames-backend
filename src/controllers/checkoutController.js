@@ -1,7 +1,8 @@
 // ============================================================
 // 💳 BlinkGames — checkoutController.js (v3.0)
 // ============================================================
-import { preference } from "../config/mercadoPago.js";
+import { client, preference } from "../config/mercadoPago.js";
+
 
 
 // Cria a preferência de pagamento (Mercado Pago)

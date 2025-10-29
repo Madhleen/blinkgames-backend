@@ -1,11 +1,8 @@
 import Order from "../models/Order.js";
 import Raffle from "../models/Raffle.js";
 import User from "../models/User.js";
-import { client, preference } from "../config/mercadoPago.js";
-
-
-
-
+import { client } from "../config/mercadoPago.js"; // ⚡️ M maiúsculo aqui!
+import { Payment } from "mercadopago"; // ✅ classe oficial do SDK
 
 // 🔹 Recebe notificações do Mercado Pago
 export const handleMercadoPagoWebhook = async (req, res) => {
@@ -17,19 +14,21 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     }
 
     const paymentId = data.id;
-    const payment = await mercadopagoClient.payment.findById(paymentId);
 
-    if (!payment || !payment.body) {
-      console.error("Pagamento não encontrado no Mercado Pago:", paymentId);
+    // ✅ busca de pagamento com o novo SDK
+    const payment = await new Payment(client).get({ id: paymentId });
+
+    if (!payment || !payment.id) {
+      console.error("❌ Pagamento não encontrado no Mercado Pago:", paymentId);
       return res.status(404).json({ error: "Pagamento não encontrado." });
     }
 
-    const status = payment.body.status;
-    const metadata = payment.body.metadata;
+    const status = payment.status;
+    const metadata = payment.metadata;
 
-    const order = await Order.findOne({ mpPreferenceId: payment.body.order.id });
+    const order = await Order.findOne({ mpPreferenceId: payment.order?.id });
     if (!order) {
-      console.error("Ordem não encontrada:", payment.body.order.id);
+      console.error("❌ Ordem não encontrada:", payment.order?.id);
       return res.status(404).json({ error: "Ordem não encontrada." });
     }
 
@@ -38,7 +37,7 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     order.mpPaymentId = paymentId;
     await order.save();
 
-    // Se pagamento aprovado → vincula os números à rifa e ao usuário
+    // Se pagamento aprovado → vincula números ao usuário
     if (status === "approved" && metadata?.cart) {
       const user = await User.findById(metadata.userId);
 
@@ -61,9 +60,11 @@ export const handleMercadoPagoWebhook = async (req, res) => {
       await user.save();
     }
 
+    console.log(`✅ Webhook processado — pagamento ${paymentId} (${status})`);
     res.status(200).json({ message: "Webhook processado com sucesso." });
   } catch (err) {
-    console.error("Erro no webhook:", err);
+    console.error("💥 Erro no webhook:", err);
     res.status(500).json({ error: "Erro ao processar webhook." });
   }
 };
+

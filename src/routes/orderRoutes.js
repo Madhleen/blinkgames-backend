@@ -4,10 +4,19 @@ import { authMiddleware } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// 🔹 Criar checkout (gera preference do Mercado Pago)
+/**
+ * @route POST /api/order/checkout
+ * @desc Cria uma preferência de pagamento no Mercado Pago
+ * @access Privado (usuário autenticado)
+ */
 router.post("/checkout", authMiddleware, createCheckout);
 
-// 🔹 Listar ordens do usuário logado
+/**
+ * @route GET /api/order/me
+ * @desc Retorna todas as ordens do usuário autenticado
+ * @access Privado (usuário autenticado)
+ */
 router.get("/me", authMiddleware, getUserOrders);
 
 export default router;
+

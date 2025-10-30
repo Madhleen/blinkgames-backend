@@ -2,7 +2,7 @@ import Order from "../models/Order.js";
 import Raffle from "../models/Raffle.js";
 import User from "../models/User.js";
 import { gerarNumerosUnicos } from "../utils/numberGenerator.js";
-import { client } from "../config/mercadoPago.js"; // ✅ usa o export correto
+import { preference } from "../config/mercadoPago.js"; // ✅ usa o objeto correto
 
 // ============================================================
 // 💳 Criar ordem e preference no Mercado Pago
@@ -14,7 +14,9 @@ export const createCheckout = async (req, res) => {
 
     // 🔹 Busca usuário no banco
     const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ error: "Usuário não encontrado" });
+    if (!user) {
+      return res.status(404).json({ error: "Usuário não encontrado" });
+    }
 
     const itens = [];
     const orderItens = [];
@@ -51,7 +53,7 @@ export const createCheckout = async (req, res) => {
     );
 
     // 🔹 Cria preferência no Mercado Pago
-    const mpPreference = await client.preferences.create({
+    const mpPreference = await preference.create({
       items: itens,
       payer: {
         name: user.nome,
@@ -76,6 +78,7 @@ export const createCheckout = async (req, res) => {
       status: "pending",
       mpPreferenceId: mpPreference.id,
     });
+
     await order.save();
 
     // 🔹 Retorna link de pagamento

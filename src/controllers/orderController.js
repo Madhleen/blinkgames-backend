@@ -5,12 +5,16 @@ import { gerarNumerosUnicos } from "../utils/numberGenerator.js";
 import { preference } from "../config/mercadoPago.js"; // ✅ usa o objeto correto
 
 // ============================================================
-// 💳 Criar ordem e preference no Mercado Pago
+// 💳 Criar ordem e preferência no Mercado Pago
 // ============================================================
 export const createCheckout = async (req, res) => {
   try {
     const userId = req.user.id;
     const { cart } = req.body; // [{ raffleId, qtd }]
+
+    if (!cart || !Array.isArray(cart) || cart.length === 0) {
+      return res.status(400).json({ error: "Carrinho inválido ou vazio" });
+    }
 
     // 🔹 Busca usuário no banco
     const user = await User.findById(userId);
@@ -60,7 +64,8 @@ export const createCheckout = async (req, res) => {
         email: user.email,
         identification: { type: "CPF", number: user.cpf },
       },
-      metadata: { userId, cart: orderItens },
+      // ✅ O Mercado Pago só aceita texto/números simples no metadata
+      metadata: { userId: String(userId) },
       back_urls: {
         success: `${process.env.BASE_URL_FRONTEND}/pagamento/sucesso`,
         failure: `${process.env.BASE_URL_FRONTEND}/pagamento/erro`,
@@ -81,10 +86,16 @@ export const createCheckout = async (req, res) => {
 
     await order.save();
 
+    console.log("✅ Checkout criado com sucesso:", {
+      preferenceId: mpPreference.id,
+      total,
+      user: user.email,
+    });
+
     // 🔹 Retorna link de pagamento
     res.json({ init_point: mpPreference.init_point });
   } catch (err) {
-    console.error("❌ Erro ao criar checkout:", err);
+    console.error("❌ Erro ao criar checkout:", err.message || err);
     res.status(500).json({ error: "Erro ao criar checkout" });
   }
 };
@@ -99,7 +110,7 @@ export const getUserOrders = async (req, res) => {
     });
     res.json(orders);
   } catch (err) {
-    console.error("❌ Erro ao buscar ordens:", err);
+    console.error("❌ Erro ao buscar ordens:", err.message || err);
     res.status(500).json({ error: "Erro ao buscar ordens" });
   }
 };

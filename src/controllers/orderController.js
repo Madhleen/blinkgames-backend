@@ -2,10 +2,7 @@ import Order from "../models/Order.js";
 import Raffle from "../models/Raffle.js";
 import User from "../models/User.js";
 import { gerarNumerosUnicos } from "../utils/numberGenerator.js";
-import { client, preference } from "../config/mercadoPago.js";
-
-
-
+import { mercadopagoClient } from "../config/mercadoPago.js"; // ✅ ajuste principal
 
 // 🔹 Criar ordem e preference no Mercado Pago
 export const createCheckout = async (req, res) => {
@@ -23,8 +20,18 @@ export const createCheckout = async (req, res) => {
       const rifa = await Raffle.findById(item.raffleId);
       if (!rifa) continue;
 
-      const numeros = gerarNumerosUnicos(item.qtd, rifa.maxNumeros, rifa.numerosVendidos);
-      orderItens.push({ raffleId: rifa._id, numeros, precoUnit: rifa.preco });
+      const numeros = gerarNumerosUnicos(
+        item.qtd,
+        rifa.maxNumeros,
+        rifa.numerosVendidos
+      );
+
+      orderItens.push({
+        raffleId: rifa._id,
+        numeros,
+        precoUnit: rifa.preco,
+      });
+
       itens.push({
         title: rifa.titulo,
         unit_price: rifa.preco,
@@ -33,16 +40,20 @@ export const createCheckout = async (req, res) => {
       });
     }
 
-    const total = orderItens.reduce((sum, i) => sum + i.precoUnit * i.numeros.length, 0);
+    const total = orderItens.reduce(
+      (sum, i) => sum + i.precoUnit * i.numeros.length,
+      0
+    );
 
-    const preference = await mercadopagoClient.preferences.create({
+    // ✅ cria a preferência corretamente
+    const mpPreference = await mercadopagoClient.preferences.create({
       items: itens,
       payer: {
         name: user.nome,
         email: user.email,
         identification: { type: "CPF", number: user.cpf },
       },
-      metadata: { userId: userId, cart: orderItens },
+      metadata: { userId, cart: orderItens },
       back_urls: {
         success: `${process.env.BASE_URL_FRONTEND}/pagamento/sucesso`,
         failure: `${process.env.BASE_URL_FRONTEND}/pagamento/erro`,
@@ -52,18 +63,20 @@ export const createCheckout = async (req, res) => {
       notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`,
     });
 
+    // ✅ salva pedido no banco
     const order = new Order({
       userId,
       itens: orderItens,
       total,
       status: "pending",
-      mpPreferenceId: preference.id,
+      mpPreferenceId: mpPreference.id,
     });
     await order.save();
 
-    res.json({ init_point: preference.init_point });
+    // ✅ responde ao frontend com o link de pagamento
+    res.json({ init_point: mpPreference.init_point });
   } catch (err) {
-    console.error(err);
+    console.error("❌ Erro ao criar checkout:", err);
     res.status(500).json({ error: "Erro ao criar checkout" });
   }
 };
@@ -71,9 +84,13 @@ export const createCheckout = async (req, res) => {
 // 🔹 Consultar ordens do usuário
 export const getUserOrders = async (req, res) => {
   try {
-    const orders = await Order.find({ userId: req.user.id }).sort({ createdAt: -1 });
+    const orders = await Order.find({ userId: req.user.id }).sort({
+      createdAt: -1,
+    });
     res.json(orders);
   } catch (err) {
+    console.error("❌ Erro ao buscar ordens:", err);
     res.status(500).json({ error: "Erro ao buscar ordens" });
   }
 };
+

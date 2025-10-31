@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v4.0 Final)
+// 💳 BlinkGames — checkoutController.js (v4.1 Corrigido e Validado)
 // ============================================================
 
 import { client, preference } from "../config/mercadoPago.js";
@@ -17,15 +17,22 @@ export const createCheckout = async (req, res) => {
     }
 
     // 🔹 Mapeia os itens para o formato esperado pelo Mercado Pago
-    const items = cart.map((i) => ({
-      title: i.title || "Produto BlinkGames",
-      unit_price: Number(i.price) || 0,
-      quantity: Number(i.quantity) || 1,
-      currency_id: "BRL",
-    }));
+    const items = cart.map((i) => {
+      const price = Number(i.price);
+      const qty = Number(i.quantity);
+
+      return {
+        title: i.title || "Produto BlinkGames",
+        unit_price: isNaN(price) || price <= 0 ? 1 : price, // ✅ garante valor mínimo de R$1
+        quantity: isNaN(qty) || qty <= 0 ? 1 : qty,
+        currency_id: "BRL",
+      };
+    });
+
+    console.log("🧾 Itens enviados ao Mercado Pago:", items);
 
     // 🔹 URL base do frontend (fallback se env não estiver setado)
-    const frontendURL = process.env.BASE_URL_FRONTEND || "https://blinkgames.vercel.app";
+    const frontendURL = process.env.BASE_URL_FRONTEND || "https://blinkgamesrifa.vercel.app";
 
     // 🔹 Monta a preferência de pagamento
     const preferenceData = {

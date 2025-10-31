@@ -14,13 +14,13 @@ export const createCheckout = async (req, res) => {
     const { cart } = req.body; // [{ raffleId || id, qtd || quantity }]
 
     if (!userId || !cart || cart.length === 0) {
-      return res.status(400).json({ error: "Carrinho vazio ou usuário inválido" });
+      return res.status(400).json({ error: "Carrinho vazio ou usuário inválido." });
     }
 
     // 🔹 Busca usuário no banco
     const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({ error: "Usuário não encontrado" });
+      return res.status(404).json({ error: "Usuário não encontrado." });
     }
 
     const itens = [];
@@ -28,7 +28,6 @@ export const createCheckout = async (req, res) => {
 
     // 🔹 Monta os itens da compra
     for (const item of cart) {
-      // compatibilidade com os nomes vindos do frontend
       const raffleId = item.raffleId || item.id || item._id;
       const qtd = item.qtd || item.quantity || 1;
 
@@ -55,7 +54,7 @@ export const createCheckout = async (req, res) => {
     }
 
     if (orderItens.length === 0) {
-      return res.status(400).json({ error: "Nenhuma rifa válida encontrada" });
+      return res.status(400).json({ error: "Nenhuma rifa válida encontrada." });
     }
 
     const total = orderItens.reduce(
@@ -63,18 +62,26 @@ export const createCheckout = async (req, res) => {
       0
     );
 
-    // 🔹 Cria uma instância Preference vinculada ao client
+    // ============================================================
+    // 🧠 Criação da preferência Mercado Pago
+    // ============================================================
     const preference = new Preference(client);
 
-    // 🔹 Cria a preferência no Mercado Pago
+    const payerData = {
+      name: user.nome || "Cliente BlinkGames",
+      email: user.email || "sem-email@blinkgames.com",
+    };
+
+    if (user.cpf) {
+      payerData.identification = { type: "CPF", number: user.cpf };
+    }
+
+    console.log("🧾 Criando preferência Mercado Pago...");
+
     const mpPreference = await preference.create({
       body: {
         items: itens,
-        payer: {
-          name: user.nome,
-          email: user.email,
-          identification: { type: "CPF", number: user.cpf },
-        },
+        payer: payerData,
         metadata: { userId, cart: orderItens },
         back_urls: {
           success: `${process.env.BASE_URL_FRONTEND}/pagamento/sucesso`,
@@ -86,7 +93,14 @@ export const createCheckout = async (req, res) => {
       },
     });
 
-    // 🔹 Salva pedido no banco
+    if (!mpPreference?.id || !mpPreference?.init_point) {
+      console.error("❌ Falha ao criar preferência Mercado Pago:", mpPreference);
+      return res.status(500).json({ error: "Erro ao criar preferência no Mercado Pago." });
+    }
+
+    // ============================================================
+    // 💾 Salva pedido no banco
+    // ============================================================
     const order = new Order({
       userId,
       itens: orderItens,
@@ -97,10 +111,12 @@ export const createCheckout = async (req, res) => {
 
     await order.save();
 
+    console.log("✅ Pedido salvo com sucesso:", order._id);
+
     res.json({ init_point: mpPreference.init_point });
   } catch (err) {
     console.error("❌ Erro ao criar checkout:", err);
-    res.status(500).json({ error: err.message || "Erro ao criar checkout" });
+    res.status(500).json({ error: err.message || "Erro ao criar checkout." });
   }
 };
 
@@ -115,7 +131,7 @@ export const getUserOrders = async (req, res) => {
     res.json(orders);
   } catch (err) {
     console.error("❌ Erro ao buscar ordens:", err);
-    res.status(500).json({ error: "Erro ao buscar ordens" });
+    res.status(500).json({ error: "Erro ao buscar ordens." });
   }
 };
 

@@ -2,8 +2,8 @@ import Order from "../models/Order.js";
 import Raffle from "../models/Raffle.js";
 import User from "../models/User.js";
 import { gerarNumerosUnicos } from "../utils/numberGenerator.js";
-import { client } from "../config/mercadoPago.js"; // usa o cliente global
-import { Preference } from "mercadopago"; // importa o construtor de preferência
+import { client } from "../config/mercadoPago.js";
+import { Preference } from "mercadopago";
 
 // ============================================================
 // 💳 Criar ordem e preference no Mercado Pago
@@ -11,7 +11,7 @@ import { Preference } from "mercadopago"; // importa o construtor de preferênci
 export const createCheckout = async (req, res) => {
   try {
     const userId = req.user?.id;
-    const { cart } = req.body; // [{ raffleId, qtd }]
+    const { cart } = req.body; // [{ raffleId || id, qtd || quantity }]
 
     if (!userId || !cart || cart.length === 0) {
       return res.status(400).json({ error: "Carrinho vazio ou usuário inválido" });
@@ -28,14 +28,17 @@ export const createCheckout = async (req, res) => {
 
     // 🔹 Monta os itens da compra
     for (const item of cart) {
-      const rifa = await Raffle.findById(item.raffleId);
-      if (!rifa) continue;
+      // compatibilidade com os nomes vindos do frontend
+      const raffleId = item.raffleId || item.id || item._id;
+      const qtd = item.qtd || item.quantity || 1;
 
-      const numeros = gerarNumerosUnicos(
-        item.qtd,
-        rifa.maxNumeros,
-        rifa.numerosVendidos
-      );
+      const rifa = await Raffle.findById(raffleId);
+      if (!rifa) {
+        console.warn("⚠️ Rifa não encontrada:", raffleId);
+        continue;
+      }
+
+      const numeros = gerarNumerosUnicos(qtd, rifa.maxNumeros, rifa.numerosVendidos);
 
       orderItens.push({
         raffleId: rifa._id,
@@ -45,20 +48,20 @@ export const createCheckout = async (req, res) => {
 
       itens.push({
         title: rifa.titulo,
-        quantity: Number(item.qtd),
+        quantity: Number(qtd),
         unit_price: Number(rifa.preco),
         currency_id: "BRL",
       });
+    }
+
+    if (orderItens.length === 0) {
+      return res.status(400).json({ error: "Nenhuma rifa válida encontrada" });
     }
 
     const total = orderItens.reduce(
       (sum, i) => sum + i.precoUnit * i.numeros.length,
       0
     );
-
-    if (itens.length === 0) {
-      return res.status(400).json({ error: "Nenhuma rifa válida encontrada" });
-    }
 
     // 🔹 Cria uma instância Preference vinculada ao client
     const preference = new Preference(client);
@@ -96,7 +99,7 @@ export const createCheckout = async (req, res) => {
 
     res.json({ init_point: mpPreference.init_point });
   } catch (err) {
-    console.error("❌ Erro ao criar checkout:", err.message);
+    console.error("❌ Erro ao criar checkout:", err);
     res.status(500).json({ error: err.message || "Erro ao criar checkout" });
   }
 };

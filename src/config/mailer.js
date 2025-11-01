@@ -6,7 +6,6 @@ dotenv.config();
 // Configura a API Key do SendGrid
 sgMail.setApiKey(process.env.SMTP_PASS);
 
-// Função compatível com transporter do nodemailer
 export const transporter = {
   sendMail: async ({ to, subject, html }) => {
     try {
@@ -16,7 +15,6 @@ export const transporter = {
         subject,
         html,
       };
-
       await sgMail.send(msg);
       console.log(`📧 E-mail enviado com sucesso para ${to}`);
     } catch (error) {

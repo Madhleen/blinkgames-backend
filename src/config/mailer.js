@@ -1,27 +1,20 @@
 import nodemailer from "nodemailer";
+import sgTransport from "nodemailer-sendgrid";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-export const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: process.env.SMTP_PORT,
-  secure: false, // não usa SSL direto
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false, // evita erro de certificado no Render
-  },
-  connectionTimeout: 20000, // aumenta o tempo pra evitar timeout no handshake
-});
+export const transporter = nodemailer.createTransport(
+  sgTransport({
+    apiKey: process.env.SENDGRID_API_KEY,
+  })
+);
 
 transporter.verify((error, success) => {
   if (error) {
-    console.error("❌ Erro ao configurar e-mail:", error);
+    console.error("❌ Erro ao configurar o SendGrid:", error);
   } else {
-    console.log("✅ Servidor de e-mail pronto para envio!");
+    console.log("✅ SendGrid pronto para envio de e-mails!");
   }
 });
 

@@ -1,8 +1,9 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v5.1 corrigido para SDK nova)
+// 💳 BlinkGames — checkoutController.js (v6.2 FINAL para SDK nova)
 // ============================================================
 
-import { preference } from "../config/mercadoPago.js";
+import { Preference } from "mercadopago";
+import { client } from "../config/mercadoPago.js";
 
 export const createCheckout = async (req, res) => {
   try {
@@ -24,6 +25,9 @@ export const createCheckout = async (req, res) => {
     const frontendURL =
       process.env.BASE_URL_FRONTEND || "https://blinkgamesrifa.vercel.app";
 
+    // ✅ Cria instância Preference com o client configurado
+    const preference = new Preference(client);
+
     const preferenceData = {
       items,
       back_urls: {
@@ -38,21 +42,22 @@ export const createCheckout = async (req, res) => {
 
     console.log("🟦 Enviando preferência ao Mercado Pago:", preferenceData);
 
+    // ✅ Cria a preferência corretamente
     const response = await preference.create({ body: preferenceData });
 
-    // ✅ O objeto correto está dentro de response
-    const pref = response.body;
+    // 🔧 SDK nova: às vezes retorna direto, às vezes dentro de body
+    const initPoint = response?.init_point || response?.body?.init_point;
 
-    if (!pref || !pref.init_point) {
-      console.error("❌ Resposta inesperada do Mercado Pago:", pref);
+    if (!initPoint) {
+      console.error("❌ Resposta inesperada do Mercado Pago:", response);
       return res.status(500).json({ error: "Falha ao gerar link de pagamento" });
     }
 
-    console.log("✅ Checkout criado:", pref.init_point);
-    res.status(200).json({ checkoutUrl: pref.init_point });
+    console.log("✅ Checkout criado com sucesso:", initPoint);
+    res.status(200).json({ checkoutUrl: initPoint });
 
   } catch (err) {
-    console.error("❌ Erro no checkout:", err);
+    console.error("💥 Erro ao criar checkout:", err);
     res.status(500).json({
       error:
         err.response?.data?.message ||

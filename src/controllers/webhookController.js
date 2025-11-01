@@ -1,13 +1,12 @@
 // ============================================================
-// 💳 BlinkGames — webhookController.js (v4.2 corrigido)
+// 💳 BlinkGames — webhookController.js (v6.2 Final Corrigido)
 // ============================================================
 
 import Order from "../models/Order.js";
 import Raffle from "../models/Raffle.js";
 import User from "../models/User.js";
 import { client } from "../config/mercadoPago.js";
-import { Preference, Payment } from "mercadopago";
-import { Payment } from "mercadopago"; // ✅ SDK oficial
+import { Payment } from "mercadopago"; // ✅ Apenas uma importação
 
 // ============================================================
 // 📬 Recebe notificações do Mercado Pago (webhook)
@@ -16,7 +15,6 @@ export const handleMercadoPagoWebhook = async (req, res) => {
   try {
     const { action, data } = req.body;
 
-    // Ignora eventos irrelevantes
     if (action !== "payment.created" && action !== "payment.updated") {
       console.log("ℹ️ Evento ignorado:", action);
       return res.status(200).json({ message: "Evento ignorado." });
@@ -25,8 +23,7 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     const paymentId = data.id;
     console.log(`📩 Webhook recebido: ${action} (ID: ${paymentId})`);
 
-    // ✅ Busca o pagamento com o SDK novo
-    const payment = await new Payment(mercadopagoClient).get({ id: paymentId });
+    const payment = await new Payment(client).get({ id: paymentId });
 
     if (!payment || !payment.id) {
       console.error("❌ Pagamento não encontrado no Mercado Pago:", paymentId);
@@ -37,19 +34,16 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     const metadata = payment.metadata || {};
     console.log(`💰 Pagamento ${paymentId} status: ${status}`);
 
-    // 🔍 Encontra a ordem vinculada
     const order = await Order.findOne({ mpPreferenceId: payment.order?.id });
     if (!order) {
       console.error("❌ Ordem não encontrada:", payment.order?.id);
       return res.status(404).json({ error: "Ordem não encontrada." });
     }
 
-    // 🔄 Atualiza status da ordem
     order.status = status;
     order.mpPaymentId = paymentId;
     await order.save();
 
-    // ✅ Se o pagamento foi aprovado, vincula números ao usuário e rifa
     if (status === "approved" && metadata?.cart && metadata?.userId) {
       const user = await User.findById(metadata.userId);
 

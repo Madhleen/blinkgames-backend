@@ -1,20 +1,23 @@
 import nodemailer from "nodemailer";
-import sgTransport from "nodemailer-sendgrid";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-export const transporter = nodemailer.createTransport(
-  sgTransport({
-    apiKey: process.env.SENDGRID_API_KEY,
-  })
-);
+export const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: process.env.SMTP_PORT,
+  secure: false, // TLS desativado, pois SendGrid usa STARTTLS
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
 
 transporter.verify((error, success) => {
   if (error) {
-    console.error("❌ Erro ao configurar o SendGrid:", error);
+    console.error("❌ Erro ao configurar e-mail:", error);
   } else {
-    console.log("✅ SendGrid pronto para envio de e-mails!");
+    console.log("✅ Servidor de e-mail SendGrid pronto!");
   }
 });
 

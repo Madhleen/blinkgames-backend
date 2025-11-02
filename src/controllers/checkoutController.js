@@ -47,16 +47,13 @@ export const createCheckout = async (req, res) => {
       binary_mode: true,
 
       // 🔹 Dados extras úteis para o webhook
-      metadata: {
-        userId,
-        cart,
-      },
+  metadata: {
+  userId,
+  cart,
+},
+external_reference: userId || "anonimo", // 🔥 o elo que faltava
+notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`,
 
-      // 🔗 Cria o elo entre Preference e Order
-      external_reference: userId || "anonimo",
-
-      // 🔔 URL que o Mercado Pago vai notificar
-      notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`,
     };
 
     console.log("🟦 Enviando preferência ao Mercado Pago:", preferenceData);

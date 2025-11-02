@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v6.2 FINAL para SDK nova)
+// 💳 BlinkGames — checkoutController.js (v6.3 FINAL)
 // ============================================================
 
 import { Preference } from "mercadopago";
@@ -8,11 +8,15 @@ import { client } from "../config/mercadoPago.js";
 export const createCheckout = async (req, res) => {
   try {
     const { cart } = req.body;
+    const userId = req.user?.id || null; // ✅ Captura o usuário autenticado, se existir
 
     if (!cart || !Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Carrinho vazio ou inválido" });
     }
 
+    // ============================================================
+    // 🔹 Monta os itens
+    // ============================================================
     const items = cart.map((i) => ({
       title: i.title || "Produto BlinkGames",
       unit_price: Number(i.price) > 0 ? Number(i.price) : 1,
@@ -25,7 +29,9 @@ export const createCheckout = async (req, res) => {
     const frontendURL =
       process.env.BASE_URL_FRONTEND || "https://blinkgamesrifa.vercel.app";
 
-    // ✅ Cria instância Preference com o client configurado
+    // ============================================================
+    // 💰 Criação da preferência
+    // ============================================================
     const preference = new Preference(client);
 
     const preferenceData = {
@@ -38,14 +44,17 @@ export const createCheckout = async (req, res) => {
       auto_return: "approved",
       statement_descriptor: "BLINKGAMES",
       binary_mode: true,
+      metadata: {
+        userId, // ✅ Para o webhook saber quem comprou
+        cart,   // ✅ Envia o conteúdo da compra
+      },
+      notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`, // ✅ Fundamental
     };
 
     console.log("🟦 Enviando preferência ao Mercado Pago:", preferenceData);
 
-    // ✅ Cria a preferência corretamente
     const response = await preference.create({ body: preferenceData });
 
-    // 🔧 SDK nova: às vezes retorna direto, às vezes dentro de body
     const initPoint = response?.init_point || response?.body?.init_point;
 
     if (!initPoint) {

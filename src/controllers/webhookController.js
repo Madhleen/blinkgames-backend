@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — webhookController.js (v6.4 Final Compatível MP)
+// 💳 BlinkGames — webhookController.js (v6.5 Final Compatível MP)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -13,18 +13,12 @@ import { Payment } from "mercadopago";
 // ============================================================
 export const handleMercadoPagoWebhook = async (req, res) => {
   try {
-    // 🧩 Garante que o corpo seja JSON mesmo se vier como string
-    let body;
-    try {
-      body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    } catch (e) {
-      console.error("⚠️ Corpo inválido recebido:", req.body);
-      return res.status(400).json({ error: "Formato inválido de corpo." });
-    }
+    // 🧩 Garante que o corpo seja JSON válido
+    const body =
+      typeof req.body === "string" ? JSON.parse(req.body) : req.body;
 
     const { action, data, type, id } = body;
 
-    // 🔹 O Mercado Pago pode enviar "type: payment" sem o campo "action"
     const paymentId = data?.id || id;
     if (!paymentId) {
       console.error("⚠️ Webhook recebido sem paymentId válido:", body);
@@ -33,15 +27,13 @@ export const handleMercadoPagoWebhook = async (req, res) => {
 
     console.log(`📩 Webhook recebido — action: ${action || type}, ID: ${paymentId}`);
 
-    // 🔹 Protege contra travamentos se o ID for inválido
+    // 🔹 Busca o pagamento no Mercado Pago
     let payment;
     try {
       payment = await new Payment(client).get({ id: paymentId });
     } catch (err) {
       console.error("⚠️ Erro ao buscar pagamento no Mercado Pago:", err.message);
-      return res
-        .status(400)
-        .json({ error: "Falha ao consultar pagamento no Mercado Pago." });
+      return res.status(400).json({ error: "Falha ao consultar pagamento no Mercado Pago." });
     }
 
     if (!payment || !payment.id) {
@@ -53,10 +45,13 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     const metadata = payment.metadata || {};
     console.log(`💰 Pagamento ${paymentId} status: ${status}`);
 
-    // 🔍 Busca ordem relacionada
-    const order = await Order.findOne({ mpPreferenceId: payment.order?.id });
+    // 🔍 Busca a ordem relacionada usando external_reference ou order.id
+    const order = await Order.findOne({
+      mpPreferenceId: payment.external_reference || payment.order?.id
+    });
+
     if (!order) {
-      console.error("❌ Ordem não encontrada:", payment.order?.id);
+      console.error("❌ Ordem não encontrada:", payment.external_reference || payment.order?.id);
       return res.status(404).json({ error: "Ordem não encontrada." });
     }
 
@@ -65,7 +60,7 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     order.mpPaymentId = paymentId;
     await order.save();
 
-    // 🔹 Se aprovado, salva dados de rifa e usuário
+    // 🔹 Se aprovado, salva dados na rifa e no usuário
     if (status === "approved" && metadata?.cart && metadata?.userId) {
       const user = await User.findById(metadata.userId);
 

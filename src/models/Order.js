@@ -2,19 +2,15 @@ import mongoose from "mongoose";
 
 const orderSchema = new mongoose.Schema(
   {
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
+    userId: {
+      type: String, // 🔹 vem direto do metadata (não precisa ser ObjectId)
     },
-    raffle: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Raffle",
-      required: true,
+    mpPreferenceId: {
+      type: String, // 🔹 usado pra o webhook localizar o pagamento
     },
-    numbers: {
-      type: [Number],
-      required: true,
+    cart: {
+      type: Array, // 🔹 salva o carrinho inteiro
+      default: [],
     },
     total: {
       type: Number,
@@ -22,13 +18,14 @@ const orderSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "paid", "canceled"],
+      enum: ["pending", "approved", "rejected"],
       default: "pending",
     },
-    paymentId: String, // ID do Mercado Pago
+    mpPaymentId: String, // 🔹 ID real do pagamento do MP
   },
   { timestamps: true }
 );
 
 export default mongoose.model("Order", orderSchema);
+
 

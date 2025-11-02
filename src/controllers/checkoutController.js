@@ -1,15 +1,15 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v6.4 FINAL com Order salva)
+// 💳 BlinkGames — checkoutController.js (v6.6 FINAL com external_reference)
 // ============================================================
 
 import { Preference } from "mercadopago";
 import { client } from "../config/mercadoPago.js";
-import Order from "../models/Order.js"; // ✅ IMPORTANTE: adicionar o model de Order
+import Order from "../models/Order.js";
 
 export const createCheckout = async (req, res) => {
   try {
     const { cart } = req.body;
-    const userId = req.user?.id || null;
+    const userId = req.user?.id || "guest"; // fallback seguro
 
     if (!cart || !Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Carrinho vazio ou inválido" });
@@ -45,52 +45,61 @@ export const createCheckout = async (req, res) => {
       auto_return: "approved",
       statement_descriptor: "BLINKGAMES",
       binary_mode: true,
+
+      // 🔹 Dados extras úteis para o webhook
       metadata: {
-        userId, // ✅ O webhook vai usar isso
-        cart,   // ✅ O conteúdo do carrinho
+        userId,
+        cart,
       },
-      notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`, // ✅ Envia pro backend
+
+      // 🔗 Cria o elo entre Preference e Order
+      external_reference: userId || "anonimo",
+
+      // 🔔 URL que o Mercado Pago vai notificar
+      notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`,
     };
 
     console.log("🟦 Enviando preferência ao Mercado Pago:", preferenceData);
 
     const response = await preference.create({ body: preferenceData });
+
     const preferenceId =
       response?.id || response?.body?.id || response?.body?.preference_id;
     const initPoint = response?.init_point || response?.body?.init_point;
 
     if (!preferenceId || !initPoint) {
       console.error("❌ Resposta inesperada do Mercado Pago:", response);
-      return res
-        .status(500)
-        .json({ error: "Falha ao gerar link de pagamento" });
+      return res.status(500).json({ error: "Falha ao gerar link de pagamento" });
     }
 
     // ============================================================
-    // 🧾 Salva a ordem no banco
+    // 🧾 Salva a ordem no banco (agora compatível com o webhook)
     // ============================================================
+    const total = cart.reduce(
+      (acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 1),
+      0
+    );
+
     const newOrder = new Order({
       userId,
-      mpPreferenceId: preferenceId, // 🔥 O webhook vai encontrar usando isso
-      status: "pending",
+      mpPreferenceId: preferenceId, // 🔗 usado no webhook
       cart,
-      total:
-        cart.reduce((acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 1), 0) ||
-        0,
-      createdAt: new Date(),
+      total,
+      status: "pending",
     });
 
     await newOrder.save();
-    console.log("🗃️ Nova ordem registrada no banco:", newOrder._id);
+    console.log("🗃️ Nova ordem registrada:", newOrder._id, "para usuário:", userId);
 
     // ============================================================
     // ✅ Retorna o link de pagamento
     // ============================================================
     console.log("✅ Checkout criado com sucesso:", initPoint);
-    res.status(200).json({ checkoutUrl: initPoint });
+    return res.status(200).json({ checkoutUrl: initPoint });
+
   } catch (err) {
     console.error("💥 Erro ao criar checkout:", err);
-    res.status(500).json({
+    return res.status(500).json({
       error:
         err.response?.data?.message ||
         err.message ||

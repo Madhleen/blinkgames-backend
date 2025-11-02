@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — webhookController.js (v6.6 FINAL — compatível com external_reference)
+// 💳 BlinkGames — webhookController.js (v6.7 FINAL — fix vinculo com Order)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -43,16 +43,13 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     const ref = payment.external_reference;
     console.log(`💰 Pagamento ${paymentId} status: ${status} (ref: ${ref})`);
 
-    // 🔍 Busca a ordem associada
+    // 🔍 Busca a ordem associada corretamente pelo preferenceId (external_reference)
     const order = await Order.findOne({
-      $or: [
-        { mpPreferenceId: payment.order?.id },
-        { userId: ref },
-      ],
+      mpPreferenceId: payment.external_reference || payment.id || payment.order?.id,
     });
 
     if (!order) {
-      console.error("❌ Ordem não encontrada:", payment.order?.id || ref);
+      console.error("❌ Ordem não encontrada:", payment.external_reference || payment.order?.id);
       return res.status(404).json({ error: "Ordem não encontrada." });
     }
 

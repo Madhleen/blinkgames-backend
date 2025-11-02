@@ -1,3 +1,7 @@
+// ============================================================
+// 👤 BlinkGames — User.js (v6.6 corrigido e validado)
+// ============================================================
+
 import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema(
@@ -26,23 +30,24 @@ const userSchema = new mongoose.Schema(
     },
     resetToken: String,
     resetTokenExpires: Date,
+
+    // 🔹 Histórico de rifas compradas (usado em "Minhas Rifas")
+    purchases: [
+      {
+        raffleId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Raffle",
+        },
+        numeros: [Number],
+        precoUnit: Number,
+        paymentId: String,
+        date: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
   },
-purchases: [
-  {
-    raffleId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Raffle",
-    },
-{
-    numeros: [Number],
-    precoUnit: Number,
-    paymentId: String,
-    date: {
-      type: Date,
-      default: Date.now,
-    },
-  },
-],
   { timestamps: true }
 );
 

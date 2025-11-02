@@ -1,5 +1,5 @@
 // ============================================================
-// 💫 BlinkGames — server.js (v6.1 final e estável)
+// 💫 BlinkGames — server.js (v6.2 Final Estável + Suporte Webhooks MP)
 // ============================================================
 
 import express from "express";
@@ -23,10 +23,14 @@ import checkoutRoutes from "./routes/checkoutRoutes.js";
 // ============================================================
 dotenv.config();
 const app = express();
-app.use(express.json());
+
+// 🔹 Aceita JSON, texto puro e URL encoded — necessário pro Mercado Pago
+app.use(express.json({ limit: "2mb" }));
+app.use(express.text({ type: "*/*", limit: "2mb" }));
+app.use(express.urlencoded({ extended: true }));
 
 // ============================================================
-// 🌐 CORS — manual e seguro para Vercel + Render + MP
+// 🌐 CORS — manual e seguro para Vercel + Render + Mercado Pago
 // ============================================================
 const allowedOrigins = [
   "https://blinkgamesrifa.vercel.app",
@@ -87,7 +91,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/raffles", raffleRoutes);
 app.use("/api/order", orderRoutes);
 app.use("/api/admin", adminRoutes);
-app.use("/api/webhooks", webhookRoutes);
+app.use("/api/webhooks", webhookRoutes); // 🔹 Webhook Mercado Pago
 app.use("/api/checkout", checkoutRoutes);
 
 // ============================================================

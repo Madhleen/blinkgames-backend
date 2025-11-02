@@ -27,6 +27,22 @@ const userSchema = new mongoose.Schema(
     resetToken: String,
     resetTokenExpires: Date,
   },
+purchases: [
+  {
+    raffleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Raffle",
+    },
+{
+    numeros: [Number],
+    precoUnit: Number,
+    paymentId: String,
+    date: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+],
   { timestamps: true }
 );
 

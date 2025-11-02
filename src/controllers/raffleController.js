@@ -105,7 +105,7 @@ export const generateNumbers = async (req, res) => {
     const rifa = await Raffle.findById(id);
     if (!rifa) return res.status(404).json({ error: "Rifa não encontrada" });
 
-    const numerosGerados = gerarNumerosUnicos(quantidade, rifa.totalNumbers, rifa.soldNumbers);
+    const numerosGerados = gerarNumerosUnicos(quantidade, rifa.totalNumbers, rifa.numerosVendidos);
     res.json({ numeros: numerosGerados });
   } catch (err) {
     console.error("Erro ao gerar números:", err);

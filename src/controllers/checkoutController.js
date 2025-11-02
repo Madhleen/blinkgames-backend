@@ -51,7 +51,7 @@ export const createCheckout = async (req, res) => {
   userId,
   cart,
 },
-external_reference: userId || "anonimo", // 🔥 o elo que faltava
+external_reference: preferenceId || "anonimo", // 🔥 o elo que faltava
 notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`,
 
     };

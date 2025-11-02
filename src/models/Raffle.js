@@ -24,9 +24,10 @@ const raffleSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
-    soldNumbers: {
-      type: [Number],
-      default: [],
+    numerosVendidos: {
+  type: [Number],
+  default: [],
+
     },
     active: {
       type: Boolean,

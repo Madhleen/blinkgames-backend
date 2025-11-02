@@ -110,3 +110,10 @@ app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
 
+// 🔍 Debug de rotas
+app._router.stack.forEach(r => {
+  if (r.route && r.route.path) {
+    console.log("🛣️ Rota registrada:", r.route.path);
+  }
+});
+

@@ -1,5 +1,5 @@
 // ============================================================
-// 👤 BlinkGames — User.js (v6.6 corrigido e validado)
+// 👤 BlinkGames — User.js (corrigido e validado v6.8)
 // ============================================================
 
 import mongoose from "mongoose";
@@ -31,7 +31,7 @@ const userSchema = new mongoose.Schema(
     resetToken: String,
     resetTokenExpires: Date,
 
-    // 🔹 Histórico de rifas compradas (usado em "Minhas Rifas")
+    // 🧾 Histórico de compras do usuário
     purchases: [
       {
         raffleId: {

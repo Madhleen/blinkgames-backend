@@ -24,10 +24,10 @@ const raffleSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    // 🔹 Mantém o nome correto para integração com webhook e controller
     numerosVendidos: {
-  type: [Number],
-  default: [],
-
+      type: [Number],
+      default: [],
     },
     active: {
       type: Boolean,

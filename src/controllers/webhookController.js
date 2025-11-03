@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — webhookController.js (v6.8 FINAL)
+// 💳 BlinkGames — webhookController.js (v7.0 FINAL — compatível com checkout atualizado)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -10,8 +10,7 @@ import { Payment } from "mercadopago";
 
 export const handleMercadoPagoWebhook = async (req, res) => {
   try {
-    const body =
-      typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
 
     const { action, data, type, id } = body;
     const paymentId = data?.id || id;
@@ -23,29 +22,29 @@ export const handleMercadoPagoWebhook = async (req, res) => {
 
     console.log(`📩 Webhook recebido — ${action || type} | ID: ${paymentId}`);
 
-    // 🔹 Busca o pagamento no Mercado Pago
+    // 🔹 Consulta o pagamento no Mercado Pago
     let payment;
     try {
       payment = await new Payment(client).get({ id: paymentId });
     } catch (err) {
-      console.error("⚠️ Erro ao consultar pagamento no Mercado Pago:", err.message);
+      console.error("⚠️ Erro ao consultar pagamento:", err.message);
       return res.status(400).json({ error: "Falha ao consultar pagamento no Mercado Pago." });
     }
 
     if (!payment || !payment.id) {
-      console.error("❌ Pagamento não encontrado no MP:", paymentId);
+      console.error("❌ Pagamento não encontrado:", paymentId);
       return res.status(404).json({ error: "Pagamento não encontrado." });
     }
 
     const status = payment.status;
     const metadata = payment.metadata || {};
-    const ref = payment.external_reference;
+    const ref = payment.external_reference || metadata.preferenceId || metadata.ref;
 
     console.log(`💰 Pagamento ${paymentId} (${status}) | Ref: ${ref}`);
 
-    // 🔍 Busca a ordem associada corretamente
+    // 🔍 Busca a ordem associada
     const order = await Order.findOne({
-      mpPreferenceId: ref, // 🔗 match direto com o preferenceId atualizado no checkout
+      mpPreferenceId: ref,
     });
 
     if (!order) {
@@ -67,7 +66,7 @@ export const handleMercadoPagoWebhook = async (req, res) => {
           const raffle = await Raffle.findById(item.raffleId);
 
           if (raffle) {
-            // ⚠️ Corrigido: campo certo é numerosVendidos
+            // ✅ Usa o campo correto
             raffle.numerosVendidos.push(...(item.numeros || []));
             await raffle.save();
           }

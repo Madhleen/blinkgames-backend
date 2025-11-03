@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v6.7 estável e compatível com webhook)
+// 💳 BlinkGames — checkoutController.js (v6.8 FINAL — vinculação garantida ao webhook)
 // ============================================================
 
 import { Preference } from "mercadopago";
@@ -37,6 +37,7 @@ export const createCheckout = async (req, res) => {
     // ============================================================
     const preference = new Preference(client);
 
+    // ⚠️ OBS: ainda não temos o preferenceId aqui, ele será gerado após criar()
     const preferenceData = {
       items,
       back_urls: {
@@ -48,7 +49,6 @@ export const createCheckout = async (req, res) => {
       statement_descriptor: "BLINKGAMES",
       binary_mode: true,
       metadata: { userId, cart },
-      external_reference: userId, // 🔗 associamos direto ao usuário
       notification_url: `${backendURL}/api/webhooks/mercadopago`,
     };
 
@@ -56,7 +56,7 @@ export const createCheckout = async (req, res) => {
 
     const response = await preference.create({ body: preferenceData });
 
-    // Agora sim pegamos os dados gerados
+    // Agora sim pegamos os dados da resposta
     const preferenceId =
       response?.id || response?.body?.id || response?.body?.preference_id;
     const initPoint =
@@ -68,7 +68,7 @@ export const createCheckout = async (req, res) => {
     }
 
     // ============================================================
-    // 🧾 Salva a ordem no banco
+    // 🧾 Salva a ordem no banco (agora com preferenceId correto)
     // ============================================================
     const total = cart.reduce(
       (acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 1),
@@ -77,7 +77,7 @@ export const createCheckout = async (req, res) => {
 
     const newOrder = new Order({
       userId,
-      mpPreferenceId: preferenceId,
+      mpPreferenceId: preferenceId, // 🔗 referência que o webhook usará
       cart,
       total,
       status: "pending",
@@ -85,6 +85,26 @@ export const createCheckout = async (req, res) => {
 
     await newOrder.save();
     console.log("🗃️ Nova ordem registrada:", newOrder._id, "para usuário:", userId);
+
+    // ============================================================
+    // 🔁 Atualiza a preferência com external_reference
+    // ============================================================
+    // ⚠️ Agora que já temos o preferenceId salvo, atualizamos no MP para criar o elo com o webhook
+    try {
+      await fetch(`https://api.mercadopago.com/checkout/preferences/${preferenceId}`, {
+        method: "PUT",
+        headers: {
+          "Authorization": `Bearer ${process.env.MERCADOPAGO_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          external_reference: preferenceId, // usamos o mesmo ID da order no backend
+        }),
+      });
+      console.log(`🔗 External reference vinculada ao preference ${preferenceId}`);
+    } catch (err) {
+      console.warn("⚠️ Falha ao atualizar external_reference:", err.message);
+    }
 
     // ============================================================
     // ✅ Retorna o link de pagamento
@@ -102,5 +122,4 @@ export const createCheckout = async (req, res) => {
     });
   }
 };
-
 

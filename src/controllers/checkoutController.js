@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v6.6 FINAL com external_reference)
+// 💳 BlinkGames — checkoutController.js (v6.7 estável e compatível com webhook)
 // ============================================================
 
 import { Preference } from "mercadopago";
@@ -9,14 +9,14 @@ import Order from "../models/Order.js";
 export const createCheckout = async (req, res) => {
   try {
     const { cart } = req.body;
-    const userId = req.user?.id || "guest"; // fallback seguro
+    const userId = req.user?.id || "guest";
 
     if (!cart || !Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Carrinho vazio ou inválido" });
     }
 
     // ============================================================
-    // 🔹 Monta os itens
+    // 🔹 Monta itens enviados ao Mercado Pago
     // ============================================================
     const items = cart.map((i) => ({
       title: i.title || "Produto BlinkGames",
@@ -29,6 +29,8 @@ export const createCheckout = async (req, res) => {
 
     const frontendURL =
       process.env.BASE_URL_FRONTEND || "https://blinkgamesrifa.vercel.app";
+    const backendURL =
+      process.env.BASE_URL_BACKEND || "https://blinkgames-backend-p4as.onrender.com";
 
     // ============================================================
     // 💰 Criação da preferência no Mercado Pago
@@ -45,24 +47,20 @@ export const createCheckout = async (req, res) => {
       auto_return: "approved",
       statement_descriptor: "BLINKGAMES",
       binary_mode: true,
-
-      // 🔹 Dados extras úteis para o webhook
-  metadata: {
-  userId,
-  cart,
-},
-external_reference: preferenceId || "anonimo", // 🔥 o elo que faltava
-notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`,
-
+      metadata: { userId, cart },
+      external_reference: userId, // 🔗 associamos direto ao usuário
+      notification_url: `${backendURL}/api/webhooks/mercadopago`,
     };
 
     console.log("🟦 Enviando preferência ao Mercado Pago:", preferenceData);
 
     const response = await preference.create({ body: preferenceData });
 
+    // Agora sim pegamos os dados gerados
     const preferenceId =
       response?.id || response?.body?.id || response?.body?.preference_id;
-    const initPoint = response?.init_point || response?.body?.init_point;
+    const initPoint =
+      response?.init_point || response?.body?.init_point;
 
     if (!preferenceId || !initPoint) {
       console.error("❌ Resposta inesperada do Mercado Pago:", response);
@@ -70,7 +68,7 @@ notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`,
     }
 
     // ============================================================
-    // 🧾 Salva a ordem no banco (agora compatível com o webhook)
+    // 🧾 Salva a ordem no banco
     // ============================================================
     const total = cart.reduce(
       (acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 1),
@@ -79,7 +77,7 @@ notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`,
 
     const newOrder = new Order({
       userId,
-      mpPreferenceId: preferenceId, // 🔗 usado no webhook
+      mpPreferenceId: preferenceId,
       cart,
       total,
       status: "pending",
@@ -104,4 +102,5 @@ notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`,
     });
   }
 };
+
 

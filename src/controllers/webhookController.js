@@ -1,6 +1,6 @@
 // ============================================================
-// 💳 BlinkGames — webhookController.js (v7.0 Final)
-// Corrigido: endpoint plural, tolerante a duplicatas e logs otimizados
+// 💳 BlinkGames — webhookController.js (v7.1 Final Revisado)
+// Corrigido: busca flexível (userId ou preferenceId), logs otimizados
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -51,9 +51,14 @@ export const handleMercadoPagoWebhook = async (req, res) => {
 
     console.log(`💰 Pagamento ${paymentId} (${status}) | external_reference: ${ref}`);
 
-    // 🔹 Localiza a ordem correspondente
-    let order = await Order.findOne({ mpPreferenceId: ref });
-    if (!order) order = await Order.findOne({ mpPaymentId: paymentId });
+    // 🔹 Busca a ordem (agora aceita tanto preferenceId quanto userId)
+    let order = await Order.findOne({
+      $or: [
+        { mpPreferenceId: ref },
+        { userId: ref },
+        { mpPaymentId: paymentId },
+      ],
+    });
 
     if (!order) {
       console.error("❌ Nenhuma ordem encontrada para referência:", ref);
@@ -81,7 +86,6 @@ export const handleMercadoPagoWebhook = async (req, res) => {
             const raffle = await Raffle.findById(item.raffleId);
             if (raffle) {
               const numeros = Array.isArray(item.numeros) ? item.numeros : [];
-              // Evita duplicar números vendidos
               raffle.numerosVendidos = [...new Set([...raffle.numerosVendidos, ...numeros])];
               await raffle.save();
             }

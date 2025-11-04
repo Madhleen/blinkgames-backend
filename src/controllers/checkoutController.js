@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v7.0 FINAL — external_reference fix + rota correta)
+// 💳 BlinkGames — checkoutController.js (v7.1 FINAL — fix vírgula e rastreio)
 // ============================================================
 
 import { Preference } from "mercadopago";
@@ -15,9 +15,6 @@ export const createCheckout = async (req, res) => {
       return res.status(400).json({ error: "Carrinho vazio ou inválido" });
     }
 
-    // ============================================================
-    // 🔹 Monta itens enviados ao Mercado Pago
-    // ============================================================
     const items = cart.map((i) => ({
       title: i.title || "Produto BlinkGames",
       unit_price: Number(i.price) > 0 ? Number(i.price) : 1,
@@ -32,9 +29,6 @@ export const createCheckout = async (req, res) => {
 
     const preference = new Preference(client);
 
-    // ============================================================
-    // 💰 Cria a preferência com external_reference definido logo de início
-    // ============================================================
     const prefData = {
       items,
       back_urls: {
@@ -47,7 +41,7 @@ export const createCheckout = async (req, res) => {
       binary_mode: true,
       metadata: { userId, cart },
       notification_url: `${backendURL}/api/webhooks/mercadopago`,
-      external_reference: userId, // 🔗 vincula o usuário direto (melhor rastreio)
+      external_reference: userId, // 🔗 vincula o usuário direto
     };
 
     console.log("🟦 Enviando preferência ao Mercado Pago:", prefData);
@@ -63,9 +57,6 @@ export const createCheckout = async (req, res) => {
       return res.status(500).json({ error: "Falha ao gerar link de pagamento" });
     }
 
-    // ============================================================
-    // 🧾 Salva a ordem no banco
-    // ============================================================
     const total = cart.reduce(
       (acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 1),
       0
@@ -82,9 +73,6 @@ export const createCheckout = async (req, res) => {
     await newOrder.save();
     console.log("🗃️ Ordem registrada:", newOrder._id, "— preference:", preferenceId);
 
-    // ============================================================
-    // ✅ Retorna o link de pagamento
-    // ============================================================
     return res.status(200).json({ checkoutUrl: initPoint });
 
   } catch (err) {

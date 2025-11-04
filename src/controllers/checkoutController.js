@@ -46,7 +46,7 @@ export const createCheckout = async (req, res) => {
       statement_descriptor: "BLINKGAMES",
       binary_mode: true,
       metadata: { userId, cart },
-      notification_url: `${backendURL}/api/webhooks/mercadopago`
+      notification_url: `${backendURL}/api/webhooks/mercadopago`,
       external_reference: userId, // 🔗 vincula o usuário direto (melhor rastreio)
     };
 

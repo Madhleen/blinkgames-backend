@@ -1,6 +1,7 @@
 // ============================================================
-// 💳 BlinkGames — webhookController.js (v7.1 Final Revisado)
-// Corrigido: busca flexível (userId ou preferenceId), logs otimizados
+// 💳 BlinkGames — webhookController.js (v7.2 Produção Final)
+// Corrigido: tratamento para "guest", registro de rifas anônimas,
+// logs aprimorados e fallback robusto para pagamentos aprovados.
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -31,7 +32,7 @@ export const handleMercadoPagoWebhook = async (req, res) => {
 
     console.log(`📩 Webhook recebido — topic: ${topic || "?"} | ID: ${paymentId}`);
 
-    // 🔹 Consulta o pagamento real no MP
+    // 🔹 Consulta o pagamento real no Mercado Pago
     let payment;
     try {
       payment = await new Payment(client).get({ id: paymentId });
@@ -51,7 +52,7 @@ export const handleMercadoPagoWebhook = async (req, res) => {
 
     console.log(`💰 Pagamento ${paymentId} (${status}) | external_reference: ${ref}`);
 
-    // 🔹 Busca a ordem (agora aceita tanto preferenceId quanto userId)
+    // 🔹 Busca a ordem (aceita tanto preferenceId quanto userId)
     let order = await Order.findOne({
       $or: [
         { mpPreferenceId: ref },
@@ -70,37 +71,53 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     order.mpPaymentId = paymentId;
     await order.save();
 
-    // 🔹 Processa rifas apenas se aprovado
+    // ============================================================
+    // 🎟️ Se pagamento aprovado, marca rifas como vendidas
+    // ============================================================
     if (status === "approved") {
       const userId = metadata.userId || order.userId;
       const cart = Array.isArray(metadata.cart) && metadata.cart.length ? metadata.cart : order.cart;
 
-      if (!userId) {
-        console.warn("⚠️ Pagamento aprovado, mas sem userId associado!");
+      if (!userId || userId === "guest") {
+        console.warn("⚠️ Pagamento aprovado sem usuário logado — registrando compra anônima.");
+
+        for (const item of cart) {
+          const raffle = await Raffle.findById(item.raffleId);
+          if (raffle) {
+            const numeros = Array.isArray(item.numeros) ? item.numeros : [];
+            raffle.numerosVendidos = [...new Set([...raffle.numerosVendidos, ...numeros])];
+            await raffle.save();
+            console.log(`🎟️ Rifas atualizadas (anônimo): ${raffle.title}`);
+          }
+        }
       } else {
-        const user = await User.findById(userId);
-        if (!user) {
-          console.warn("⚠️ Usuário não encontrado:", userId);
-        } else {
-          for (const item of cart) {
-            const raffle = await Raffle.findById(item.raffleId);
-            if (raffle) {
-              const numeros = Array.isArray(item.numeros) ? item.numeros : [];
-              raffle.numerosVendidos = [...new Set([...raffle.numerosVendidos, ...numeros])];
-              await raffle.save();
+        try {
+          const user = await User.findById(userId);
+          if (!user) {
+            console.warn(`⚠️ Usuário não encontrado: ${userId}`);
+          } else {
+            for (const item of cart) {
+              const raffle = await Raffle.findById(item.raffleId);
+              if (raffle) {
+                const numeros = Array.isArray(item.numeros) ? item.numeros : [];
+                raffle.numerosVendidos = [...new Set([...raffle.numerosVendidos, ...numeros])];
+                await raffle.save();
+              }
+
+              user.purchases.push({
+                raffleId: item.raffleId,
+                numeros: Array.isArray(item.numeros) ? item.numeros : [],
+                precoUnit: Number(item.price) || Number(item.precoUnit) || 0,
+                paymentId,
+                date: new Date(),
+              });
             }
 
-            user.purchases.push({
-              raffleId: item.raffleId,
-              numeros: Array.isArray(item.numeros) ? item.numeros : [],
-              precoUnit: Number(item.price) || Number(item.precoUnit) || 0,
-              paymentId,
-              date: new Date(),
-            });
+            await user.save();
+            console.log(`🎟️ Rifas registradas com sucesso para ${user.email}`);
           }
-
-          await user.save();
-          console.log(`🎟️ Rifas registradas com sucesso para ${user.email}`);
+        } catch (err) {
+          console.error("💥 Erro ao atualizar usuário:", err);
         }
       }
     }

@@ -1,103 +1,132 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v7.2 FINAL — URL normalizada + rastreio)
+// 💳 BlinkGames — webhookController.js (v7.2 Produção Final)
+// Corrigido: tratamento para "guest", registro de rifas anônimas,
+// logs aprimorados e fallback robusto para pagamentos aprovados.
 // ============================================================
 
-import { Preference } from "mercadopago";
-import { client } from "../config/mercadoPago.js";
 import Order from "../models/Order.js";
+import Raffle from "../models/Raffle.js";
+import User from "../models/User.js";
+import { client } from "../config/mercadoPago.js";
+import { Payment } from "mercadopago";
 
-export const createCheckout = async (req, res) => {
+export const handleMercadoPagoWebhook = async (req, res) => {
   try {
-    const { cart } = req.body;
-    const userId = req.user?.id || "guest";
+    // 🔹 Aceita querystring e corpo JSON
+    const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+    const topic = body?.type || body?.action || req.query?.topic || req.query?.type;
+    const idFromBody = body?.data?.id || body?.id;
+    const idFromQuery = req.query?.id;
+    const paymentId = idFromBody || idFromQuery;
 
-    if (!cart || !Array.isArray(cart) || cart.length === 0) {
-      return res.status(400).json({ error: "Carrinho vazio ou inválido" });
+    // Ignora notificações que não sejam pagamento
+    if (String(topic).includes("merchant_order")) {
+      console.log("ℹ️ Ignorando merchant_order (não é pagamento)");
+      return res.status(200).json({ ignored: true });
     }
 
-    // ============================================================
-    // 🔹 Monta os itens enviados ao Mercado Pago
-    // ============================================================
-    const items = cart.map((i) => ({
-      title: i.title || "Produto BlinkGames",
-      unit_price: Number(i.price) > 0 ? Number(i.price) : 1,
-      quantity: Number(i.quantity) > 0 ? Number(i.quantity) : 1,
-      currency_id: "BRL",
-    }));
-
-    const frontendURL =
-      process.env.BASE_URL_FRONTEND || "https://blinkgamesrifa.vercel.app";
-    const backendURL =
-      process.env.BASE_URL_BACKEND || "https://blinkgames-backend-p4as.onrender.com";
-
-    // remove barra final se houver (evita // na URL)
-    const normalizedBackendURL = backendURL.replace(/\/$/, "");
-
-    const preference = new Preference(client);
-
-    // ============================================================
-    // 💰 Cria a preferência com external_reference definido logo de início
-    // ============================================================
-    const prefData = {
-      items,
-      back_urls: {
-        success: `${frontendURL}/sucesso.html`,
-        failure: `${frontendURL}/erro.html`,
-        pending: `${frontendURL}/aguardando.html`,
-      },
-      auto_return: "approved",
-      statement_descriptor: "BLINKGAMES",
-      binary_mode: true,
-      metadata: { userId, cart },
-      notification_url: `${normalizedBackendURL}/ipn/webhooks/payment`,
-      external_reference: userId, // 🔗 vincula o usuário direto
-    };
-
-    console.log("🟦 Enviando preferência ao Mercado Pago:", prefData);
-    const response = await preference.create({ body: prefData });
-
-    const preferenceId =
-      response?.id || response?.body?.id || response?.body?.preference_id;
-    const initPoint =
-      response?.init_point || response?.body?.init_point;
-
-    if (!preferenceId || !initPoint) {
-      console.error("❌ Resposta inesperada do Mercado Pago:", response);
-      return res.status(500).json({ error: "Falha ao gerar link de pagamento" });
+    if (!paymentId) {
+      console.error("⚠️ Webhook sem ID de pagamento:", { body, query: req.query });
+      return res.status(400).json({ error: "Webhook sem ID de pagamento." });
     }
 
-    // ============================================================
-    // 🧾 Salva a ordem no banco
-    // ============================================================
-    const total = cart.reduce(
-      (acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 1),
-      0
-    );
+    console.log(`📩 Webhook recebido — topic: ${topic || "?"} | ID: ${paymentId}`);
 
-    const newOrder = new Order({
-      userId,
-      mpPreferenceId: preferenceId,
-      cart,
-      total,
-      status: "pending",
+    // 🔹 Consulta o pagamento real no Mercado Pago
+    let payment;
+    try {
+      payment = await new Payment(client).get({ id: paymentId });
+    } catch (err) {
+      console.error("⚠️ Falha ao consultar pagamento no Mercado Pago:", err.message);
+      return res.status(400).json({ error: "Falha ao consultar pagamento no Mercado Pago." });
+    }
+
+    if (!payment || !payment.id) {
+      console.error("❌ Pagamento não encontrado:", paymentId);
+      return res.status(404).json({ error: "Pagamento não encontrado." });
+    }
+
+    const status = payment.status;
+    const metadata = payment.metadata || {};
+    const ref = payment.external_reference || payment.order?.id;
+
+    console.log(`💰 Pagamento ${paymentId} (${status}) | external_reference: ${ref}`);
+
+    // 🔹 Busca a ordem (aceita tanto preferenceId quanto userId)
+    let order = await Order.findOne({
+      $or: [
+        { mpPreferenceId: ref },
+        { userId: ref },
+        { mpPaymentId: paymentId },
+      ],
     });
 
-    await newOrder.save();
-    console.log("🗃️ Ordem registrada:", newOrder._id, "— preference:", preferenceId);
+    if (!order) {
+      console.error("❌ Nenhuma ordem encontrada para referência:", ref);
+      return res.status(404).json({ error: "Ordem não encontrada." });
+    }
+
+    // 🔄 Atualiza status e ID real do pagamento
+    order.status = status;
+    order.mpPaymentId = paymentId;
+    await order.save();
 
     // ============================================================
-    // ✅ Retorna o link de pagamento
+    // 🎟️ Se pagamento aprovado, marca rifas como vendidas
     // ============================================================
-    return res.status(200).json({ checkoutUrl: initPoint });
+    if (status === "approved") {
+      const userId = metadata.userId || order.userId;
+      const cart = Array.isArray(metadata.cart) && metadata.cart.length ? metadata.cart : order.cart;
 
+      if (!userId || userId === "guest") {
+        console.warn("⚠️ Pagamento aprovado sem usuário logado — registrando compra anônima.");
+
+        for (const item of cart) {
+          const raffle = await Raffle.findById(item.raffleId);
+          if (raffle) {
+            const numeros = Array.isArray(item.numeros) ? item.numeros : [];
+            raffle.numerosVendidos = [...new Set([...raffle.numerosVendidos, ...numeros])];
+            await raffle.save();
+            console.log(`🎟️ Rifas atualizadas (anônimo): ${raffle.title}`);
+          }
+        }
+      } else {
+        try {
+          const user = await User.findById(userId);
+          if (!user) {
+            console.warn(`⚠️ Usuário não encontrado: ${userId}`);
+          } else {
+            for (const item of cart) {
+              const raffle = await Raffle.findById(item.raffleId);
+              if (raffle) {
+                const numeros = Array.isArray(item.numeros) ? item.numeros : [];
+                raffle.numerosVendidos = [...new Set([...raffle.numerosVendidos, ...numeros])];
+                await raffle.save();
+              }
+
+              user.purchases.push({
+                raffleId: item.raffleId,
+                numeros: Array.isArray(item.numeros) ? item.numeros : [],
+                precoUnit: Number(item.price) || Number(item.precoUnit) || 0,
+                paymentId,
+                date: new Date(),
+              });
+            }
+
+            await user.save();
+            console.log(`🎟️ Rifas registradas com sucesso para ${user.email}`);
+          }
+        } catch (err) {
+          console.error("💥 Erro ao atualizar usuário:", err);
+        }
+      }
+    }
+
+    console.log(`✅ Webhook processado — pagamento ${paymentId} (${status})`);
+    return res.status(200).json({ ok: true, status });
   } catch (err) {
-    console.error("💥 Erro ao criar checkout:", err);
-    return res.status(500).json({
-      error:
-        err.response?.data?.message ||
-        err.message ||
-        "Falha desconhecida ao criar checkout",
-    });
+    console.error("💥 Erro inesperado no webhook:", err);
+    return res.status(500).json({ error: "Erro ao processar webhook." });
   }
 };
 

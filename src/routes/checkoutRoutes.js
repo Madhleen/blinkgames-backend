@@ -1,10 +1,10 @@
 // ============================================================
-// 💳 BlinkGames — routes/checkoutRoutes.js (v7.6 Produção Corrigida)
+// 💳 BlinkGames — routes/checkoutRoutes.js (v7.7 Produção Corrigida FINAL)
 // ============================================================
 
 import express from "express";
 import { createCheckout } from "../controllers/checkoutController.js";
-import { verifyToken } from "../middleware/auth.js"; // ✅ Caminho corrigido (singular)
+import { verifyToken } from "../middleware/auth.js"; // ✅ singular
 
 const router = express.Router();
 

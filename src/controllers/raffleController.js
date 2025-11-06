@@ -1,5 +1,5 @@
 // ============================================================
-// 🎟️ BlinkGames — raffleController.js (v6.8 FINAL — alinhado ao modelo soldNumbers)
+// 🎟️ BlinkGames — raffleController.js (v7.0 PRODUÇÃO FINAL)
 // ============================================================
 
 import Raffle from "../models/Raffle.js";
@@ -10,7 +10,6 @@ export const getRaffles = async (req, res) => {
   try {
     const rifas = await Raffle.find({ active: true });
 
-    // Reordena para colocar o PS5 primeiro
     const ordenadas = rifas.sort((a, b) => {
       const aTitle = (a.title || a.titulo || "").toLowerCase();
       const bTitle = (b.title || b.titulo || "").toLowerCase();
@@ -82,8 +81,7 @@ export const updateRaffle = async (req, res) => {
     const updated = await Raffle.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
     });
-    if (!updated)
-      return res.status(404).json({ error: "Rifa não encontrada" });
+    if (!updated) return res.status(404).json({ error: "Rifa não encontrada" });
     res.json(updated);
   } catch (err) {
     console.error("❌ Erro ao atualizar rifa:", err);
@@ -99,8 +97,7 @@ export const deactivateRaffle = async (req, res) => {
       { active: false },
       { new: true }
     );
-    if (!updated)
-      return res.status(404).json({ error: "Rifa não encontrada" });
+    if (!updated) return res.status(404).json({ error: "Rifa não encontrada" });
     res.json({ message: "Rifa desativada com sucesso!" });
   } catch (err) {
     console.error("❌ Erro ao desativar rifa:", err);
@@ -115,8 +112,7 @@ export const generateNumbers = async (req, res) => {
     const { quantidade } = req.body;
     const rifa = await Raffle.findById(id);
 
-    if (!rifa)
-      return res.status(404).json({ error: "Rifa não encontrada" });
+    if (!rifa) return res.status(404).json({ error: "Rifa não encontrada" });
 
     const numerosGerados = gerarNumerosUnicos(
       quantidade,
@@ -128,6 +124,19 @@ export const generateNumbers = async (req, res) => {
   } catch (err) {
     console.error("❌ Erro ao gerar números:", err);
     res.status(500).json({ error: "Erro ao gerar números" });
+  }
+};
+
+// 🔹 Excluir rifa (apenas admin)
+export const deleteRaffle = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const rifa = await Raffle.findByIdAndDelete(id);
+    if (!rifa) return res.status(404).json({ error: "Rifa não encontrada" });
+    res.json({ message: "Rifa excluída com sucesso!" });
+  } catch (err) {
+    console.error("❌ Erro ao excluir rifa:", err);
+    res.status(500).json({ error: "Erro ao excluir rifa" });
   }
 };
 

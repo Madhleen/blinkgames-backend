@@ -1,14 +1,14 @@
 // ============================================================
-// 💳 BlinkGames — routes/checkoutRoutes.js (v7.3 Produção Final)
+// 💳 BlinkGames — routes/checkoutRoutes.js (v7.4 Produção Corrigida)
 // ============================================================
 
 import express from "express";
 import { createCheckout } from "../controllers/checkoutController.js";
-import { verifyToken } from "../middlewares/auth.js"; // ⬅️ middleware de autenticação
+import { verifyToken } from "../middleware/auth.js"; // ✅ Caminho corrigido (pasta singular)
 
 const router = express.Router();
 
-// 🔒 Só cria checkout se o usuário estiver logado
+// 🔒 Criação de checkout protegida — só usuários autenticados podem prosseguir
 router.post("/", verifyToken, createCheckout);
 
 export default router;

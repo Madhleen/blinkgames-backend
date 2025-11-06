@@ -1,30 +1,15 @@
 // ============================================================
-// 💳 BlinkGames — checkoutRoutes.js (v6.9 FINAL)
+// 💳 BlinkGames — routes/checkoutRoutes.js (v7.3 Produção Final)
 // ============================================================
 
 import express from "express";
 import { createCheckout } from "../controllers/checkoutController.js";
+import { verifyToken } from "../middlewares/auth.js"; // ⬅️ middleware de autenticação
 
 const router = express.Router();
 
-// ============================================================
-// 🔹 Criação de checkout (rota principal)
-// ============================================================
-router.post("/", async (req, res, next) => {
-  try {
-    await createCheckout(req, res);
-  } catch (err) {
-    console.error("💥 Erro interno em /api/checkout:", err);
-    next(err);
-  }
-});
-
-// ============================================================
-// 🔎 Healthcheck /debug opcional (útil pra Render testar rota)
-// ============================================================
-router.get("/", (req, res) => {
-  res.status(200).json({ message: "✅ Endpoint /api/checkout ativo" });
-});
+// 🔒 Só cria checkout se o usuário estiver logado
+router.post("/", verifyToken, createCheckout);
 
 export default router;
 

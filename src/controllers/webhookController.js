@@ -1,7 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — webhookController.js (v7.2 Produção Final)
-// Corrigido: tratamento para "guest", registro de rifas anônimas,
-// logs aprimorados e fallback robusto para pagamentos aprovados.
+// 📩 BlinkGames — webhookController.js (v7.3 Produção Final)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -10,123 +8,68 @@ import User from "../models/User.js";
 import { client } from "../config/mercadoPago.js";
 import { Payment } from "mercadopago";
 
+// ============================================================
+// 🔔 Webhook Mercado Pago — produção
+// ============================================================
 export const handleMercadoPagoWebhook = async (req, res) => {
   try {
-    // 🔹 Aceita querystring e corpo JSON
-    const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-    const topic = body?.type || body?.action || req.query?.topic || req.query?.type;
-    const idFromBody = body?.data?.id || body?.id;
-    const idFromQuery = req.query?.id;
-    const paymentId = idFromBody || idFromQuery;
+    const topic = req.query.topic || req.body.type;
+    const id = req.query.id || req.body.data?.id;
+    if (!topic || !id) return res.status(400).json({ error: "Webhook inválido." });
 
-    // Ignora notificações que não sejam pagamento
-    if (String(topic).includes("merchant_order")) {
+    console.log(`📩 Webhook recebido — topic: ${topic} | ID: ${id}`);
+
+    if (topic !== "payment") {
       console.log("ℹ️ Ignorando merchant_order (não é pagamento)");
-      return res.status(200).json({ ignored: true });
+      return res.status(200).send("ok");
     }
 
-    if (!paymentId) {
-      console.error("⚠️ Webhook sem ID de pagamento:", { body, query: req.query });
-      return res.status(400).json({ error: "Webhook sem ID de pagamento." });
+    const payment = await new Payment(client).get({ id });
+    const { status, external_reference, metadata } = payment;
+    const userId = external_reference;
+    const cart = metadata?.cart || [];
+
+    console.log(`💰 Pagamento ${id} (${status}) | userId: ${userId}`);
+
+    if (status !== "approved") {
+      console.log("ℹ️ Pagamento ainda não aprovado — ignorando.");
+      return res.status(200).send("pending");
     }
 
-    console.log(`📩 Webhook recebido — topic: ${topic || "?"} | ID: ${paymentId}`);
-
-    // 🔹 Consulta o pagamento real no Mercado Pago
-    let payment;
-    try {
-      payment = await new Payment(client).get({ id: paymentId });
-    } catch (err) {
-      console.error("⚠️ Falha ao consultar pagamento no Mercado Pago:", err.message);
-      return res.status(400).json({ error: "Falha ao consultar pagamento no Mercado Pago." });
+    // 🔍 Busca usuário
+    const user = await User.findById(userId);
+    if (!user) {
+      console.warn("⚠️ Pagamento aprovado mas sem usuário logado — ignorando registro.");
+      return res.status(400).json({ error: "Usuário não encontrado." });
     }
 
-    if (!payment || !payment.id) {
-      console.error("❌ Pagamento não encontrado:", paymentId);
-      return res.status(404).json({ error: "Pagamento não encontrado." });
+    // 🔍 Atualiza status da Order
+    const order = await Order.findOneAndUpdate(
+      { preferenceId: payment.order?.id || payment.id },
+      { status: "approved" },
+      { new: true }
+    );
+
+    // 🔹 Atualiza rifas vendidas
+    for (const item of cart) {
+      await Raffle.findByIdAndUpdate(item.raffleId, {
+        $push: { soldNumbers: { $each: item.numeros, user: userId } },
+      });
     }
 
-    const status = payment.status;
-    const metadata = payment.metadata || {};
-    const ref = payment.external_reference || payment.order?.id;
-
-    console.log(`💰 Pagamento ${paymentId} (${status}) | external_reference: ${ref}`);
-
-    // 🔹 Busca a ordem (aceita tanto preferenceId quanto userId)
-    let order = await Order.findOne({
-      $or: [
-        { mpPreferenceId: ref },
-        { userId: ref },
-        { mpPaymentId: paymentId },
-      ],
+    // 🔹 Adiciona compra ao histórico do usuário
+    user.purchases.push({
+      paymentId: id,
+      items: cart,
+      total: payment.transaction_amount,
     });
+    await user.save();
 
-    if (!order) {
-      console.error("❌ Nenhuma ordem encontrada para referência:", ref);
-      return res.status(404).json({ error: "Ordem não encontrada." });
-    }
-
-    // 🔄 Atualiza status e ID real do pagamento
-    order.status = status;
-    order.mpPaymentId = paymentId;
-    await order.save();
-
-    // ============================================================
-    // 🎟️ Se pagamento aprovado, marca rifas como vendidas
-    // ============================================================
-    if (status === "approved") {
-      const userId = metadata.userId || order.userId;
-      const cart = Array.isArray(metadata.cart) && metadata.cart.length ? metadata.cart : order.cart;
-
-      if (!userId || userId === "guest") {
-        console.warn("⚠️ Pagamento aprovado sem usuário logado — registrando compra anônima.");
-
-        for (const item of cart) {
-          const raffle = await Raffle.findById(item.raffleId);
-          if (raffle) {
-            const numeros = Array.isArray(item.numeros) ? item.numeros : [];
-            raffle.numerosVendidos = [...new Set([...raffle.numerosVendidos, ...numeros])];
-            await raffle.save();
-            console.log(`🎟️ Rifas atualizadas (anônimo): ${raffle.title}`);
-          }
-        }
-      } else {
-        try {
-          const user = await User.findById(userId);
-          if (!user) {
-            console.warn(`⚠️ Usuário não encontrado: ${userId}`);
-          } else {
-            for (const item of cart) {
-              const raffle = await Raffle.findById(item.raffleId);
-              if (raffle) {
-                const numeros = Array.isArray(item.numeros) ? item.numeros : [];
-                raffle.numerosVendidos = [...new Set([...raffle.numerosVendidos, ...numeros])];
-                await raffle.save();
-              }
-
-              user.purchases.push({
-                raffleId: item.raffleId,
-                numeros: Array.isArray(item.numeros) ? item.numeros : [],
-                precoUnit: Number(item.price) || Number(item.precoUnit) || 0,
-                paymentId,
-                date: new Date(),
-              });
-            }
-
-            await user.save();
-            console.log(`🎟️ Rifas registradas com sucesso para ${user.email}`);
-          }
-        } catch (err) {
-          console.error("💥 Erro ao atualizar usuário:", err);
-        }
-      }
-    }
-
-    console.log(`✅ Webhook processado — pagamento ${paymentId} (${status})`);
-    return res.status(200).json({ ok: true, status });
+    console.log(`✅ Pagamento ${id} processado com sucesso para ${user.name}`);
+    return res.status(200).send("approved");
   } catch (err) {
     console.error("💥 Erro inesperado no webhook:", err);
-    return res.status(500).json({ error: "Erro ao processar webhook." });
+    return res.status(500).json({ error: "Erro no processamento do webhook." });
   }
 };
 

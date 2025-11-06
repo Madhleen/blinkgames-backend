@@ -1,99 +1,75 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v7.3 PRODUÇÃO REAL)
+// 💳 BlinkGames — checkoutController.js (v7.3 Produção Final)
 // ============================================================
 
-import { Preference } from "mercadopago";
-import { client } from "../config/mercadoPago.js";
 import Order from "../models/Order.js";
+import { client } from "../config/mercadoPago.js";
+import jwt from "jsonwebtoken";
 
 // ============================================================
-// 🔹 Criar checkout com usuário autenticado
+// 🔹 Criar checkout com usuário autenticado (produção real)
 // ============================================================
 export const createCheckout = async (req, res) => {
   try {
-    const { cart } = req.body;
-    const userId = req.user?.id || "guest";
-
-    if (!cart || !Array.isArray(cart) || cart.length === 0) {
-      return res.status(400).json({ error: "Carrinho vazio ou inválido" });
+    // 🔐 Confere se veio token JWT decodificado via middleware
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Usuário não autenticado." });
     }
 
-    // Monta itens
+    const { cart } = req.body;
+
+    if (!cart || !Array.isArray(cart) || cart.length === 0) {
+      return res.status(400).json({ error: "Carrinho vazio." });
+    }
+
+    // 🔹 Itens no formato do Mercado Pago
     const items = cart.map((item) => ({
-      title: item.title || "Produto BlinkGames",
-      unit_price: Number(item.price) > 0 ? Number(item.price) : 1,
-      quantity: Number(item.quantity) > 0 ? Number(item.quantity) : 1,
+      title: item.title,
+      unit_price: item.price,
+      quantity: item.quantity,
       currency_id: "BRL",
     }));
 
-    // URLs dinâmicas
-    const frontendURL =
-      process.env.BASE_URL_FRONTEND || "https://blinkgamesrifa.vercel.app";
-    const backendURL =
-      process.env.BASE_URL_BACKEND ||
-      "https://blinkgames-backend-p4as.onrender.com";
-
-    // Cria instância de Preference
-    const preference = new Preference(client);
-
-    // Monta dados da preferência
-    const prefData = {
+    // 🔹 Configuração real (produção)
+    const preference = {
       items,
       back_urls: {
-        success: `${frontendURL}/sucesso.html`,
-        failure: `${frontendURL}/erro.html`,
-        pending: `${frontendURL}/aguardando.html`,
+        success: "https://blinkgamesrifa.vercel.app/sucesso.html",
+        failure: "https://blinkgamesrifa.vercel.app/erro.html",
+        pending: "https://blinkgamesrifa.vercel.app/aguardando.html",
       },
       auto_return: "approved",
       statement_descriptor: "BLINKGAMES",
       binary_mode: true,
       metadata: { userId, cart },
-      notification_url: `${backendURL.replace(/\/$/, "")}/ipn/webhooks/payment`,
       external_reference: userId,
+      notification_url: "https://blinkgames-backend-p4as.onrender.com/ipn/webhooks/payment",
     };
 
-    console.log("🟦 Enviando preferência ao Mercado Pago:", prefData);
+    // 🔹 Cria preferência no Mercado Pago
+    const result = await client.preference.create(preference);
 
-    // Cria preferência no Mercado Pago
-    const response = await preference.create({ body: prefData });
-
-    const preferenceId =
-      response?.id || response?.body?.id || response?.body?.preference_id;
-    const initPoint =
-      response?.init_point || response?.body?.init_point;
-
-    if (!preferenceId || !initPoint) {
-      console.error("❌ Resposta inesperada do Mercado Pago:", response);
-      return res.status(500).json({ error: "Falha ao gerar link de pagamento" });
-    }
-
-    // Salva ordem no banco
-    const total = cart.reduce(
-      (acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 1),
-      0
-    );
-
-    const newOrder = new Order({
-      userId,
-      mpPreferenceId: preferenceId,
-      cart,
-      total,
+    // 🔹 Registra no banco
+    const newOrder = await Order.create({
+      user: userId,
+      preferenceId: result.id,
+      items: cart,
       status: "pending",
     });
 
-    await newOrder.save();
-    console.log("🗃️ Ordem registrada:", newOrder._id, "— preference:", preferenceId);
+    console.log(`🟦 Checkout criado com sucesso — Usuário: ${userId}`);
+    console.log(`🗃️ Ordem registrada: ${newOrder._id} — preference: ${result.id}`);
 
-    // Retorna link de pagamento
-    return res.status(200).json({ checkoutUrl: initPoint });
-  } catch (err) {
-    console.error("💥 Erro ao criar checkout:", err);
-    return res.status(500).json({
-      error:
-        err.response?.data?.message ||
-        err.message ||
-        "Falha desconhecida ao criar checkout",
+    // 🔹 Retorna para o frontend
+    res.json({
+      init_point: result.init_point,
+      preference_id: result.id,
+      orderId: newOrder._id,
     });
+  } catch (err) {
+    console.error("Erro ao criar checkout:", err);
+    res.status(500).json({ error: "Erro ao criar checkout." });
   }
 };
 

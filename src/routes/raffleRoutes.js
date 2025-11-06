@@ -1,3 +1,7 @@
+// ============================================================
+// 🎟️ BlinkGames — routes/raffleRoutes.js (v7.6 Produção Corrigida)
+// ============================================================
+
 import express from "express";
 import {
   getRaffles,
@@ -8,21 +12,22 @@ import {
   generateNumbers,
 } from "../controllers/raffleController.js";
 
-import { authMiddleware } from "../middleware/auth.js";
-import { adminMiddleware } from "../middleware/admin.js";
+import { verifyToken } from "../middlewares/auth.js"; // ✅ Caminho e nome corrigidos
+import { adminMiddleware } from "../middlewares/admin.js"; // ✅ Mantém padrão plural
 
 const router = express.Router();
 
-// 🔹 Rotas públicas
+// 🔹 Rotas públicas (abertas)
 router.get("/", getRaffles);
 router.get("/:id", getRaffleById);
 
-// 🔹 Rotas autenticadas e administrativas
-router.post("/", authMiddleware, adminMiddleware, createRaffle);
-router.put("/:id", authMiddleware, adminMiddleware, updateRaffle);
-router.put("/:id/deactivate", authMiddleware, adminMiddleware, deactivateRaffle);
+// 🔹 Rotas restritas para administradores
+router.post("/", verifyToken, adminMiddleware, createRaffle);
+router.put("/:id", verifyToken, adminMiddleware, updateRaffle);
+router.put("/:id/deactivate", verifyToken, adminMiddleware, deactivateRaffle);
 
 // 🔹 Gerar números disponíveis (usuário logado)
-router.post("/:id/generate", authMiddleware, generateNumbers);
+router.post("/:id/generate", verifyToken, generateNumbers);
 
 export default router;
+

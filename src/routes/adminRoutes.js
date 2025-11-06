@@ -1,3 +1,7 @@
+// ============================================================
+// 🛠️ BlinkGames — routes/adminRoutes.js (v8.0 Produção)
+// ============================================================
+
 import express from "express";
 import {
   getDashboard,
@@ -6,7 +10,6 @@ import {
   listPayments,
   exportCSV,
 } from "../controllers/adminController.js";
-
 import { createRaffle } from "../controllers/raffleController.js";
 import { adminMiddleware } from "../middleware/admin.js";
 
@@ -23,9 +26,8 @@ router.get("/payments", adminMiddleware, listPayments);
 // 🔹 Exportação CSV
 router.get("/export", adminMiddleware, exportCSV);
 
-// 🔹 Criação de rifas com chave admin
+// 🔹 Criar rifa
 router.post("/rifas", adminMiddleware, createRaffle);
 
 export default router;
-
 

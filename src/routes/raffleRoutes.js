@@ -4,30 +4,24 @@
 
 import express from "express";
 import {
-  getRaffles,
+  getAllRaffles,
   getRaffleById,
   createRaffle,
   updateRaffle,
-  deactivateRaffle,
-  generateNumbers,
+  deleteRaffle,
 } from "../controllers/raffleController.js";
-
-import { verifyToken } from "../middlewares/auth.js"; // ✅ Caminho e nome corrigidos
-import { adminMiddleware } from "../middlewares/admin.js"; // ✅ Mantém padrão plural
+import { verifyToken } from "../middleware/auth.js"; // ✅ Caminho corrigido (singular)
 
 const router = express.Router();
 
-// 🔹 Rotas públicas (abertas)
-router.get("/", getRaffles);
+// 🔹 Rotas públicas
+router.get("/", getAllRaffles);
 router.get("/:id", getRaffleById);
 
-// 🔹 Rotas restritas para administradores
-router.post("/", verifyToken, adminMiddleware, createRaffle);
-router.put("/:id", verifyToken, adminMiddleware, updateRaffle);
-router.put("/:id/deactivate", verifyToken, adminMiddleware, deactivateRaffle);
-
-// 🔹 Gerar números disponíveis (usuário logado)
-router.post("/:id/generate", verifyToken, generateNumbers);
+// 🔒 Rotas protegidas — apenas admins logados
+router.post("/", verifyToken, createRaffle);
+router.put("/:id", verifyToken, updateRaffle);
+router.delete("/:id", verifyToken, deleteRaffle);
 
 export default router;
 

@@ -1,65 +1,89 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v7.4 Produção Estável)
+// 💳 BlinkGames — checkoutController.js (PROD, JWT obrigatório)
 // ============================================================
-
 import Order from "../models/Order.js";
-import { client } from "../config/mercadoPago.js";
-import jwt from "jsonwebtoken";
+import { preference } from "../config/mercadoPago.js";
 
+// 🔒 Esta action pressupõe que o middleware verifyToken já populou req.user
 export const createCheckout = async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: "Usuário não autenticado." });
-
-    const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const userId = decoded.id;
+    const userId = req.user?.id; // vem do middleware
+    if (!userId) {
+      return res.status(401).json({ error: "Usuário não autenticado." });
+    }
 
     const { cart } = req.body;
-    if (!cart || !Array.isArray(cart) || cart.length === 0)
+    if (!Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Carrinho vazio." });
+    }
 
-    const items = cart.map((item) => ({
-      title: item.title,
-      unit_price: Number(item.price),
-      quantity: Number(item.quantity),
+    // Normaliza itens
+    const items = cart.map((i) => ({
+      title: i.title || "Rifa BlinkGames",
+      unit_price: Number(i.price) > 0 ? Number(i.price) : 1,
+      quantity: Number(i.quantity) > 0 ? Number(i.quantity) : 1,
       currency_id: "BRL",
     }));
 
-    const preference = {
+    const frontendURL =
+      process.env.BASE_URL_FRONTEND || "https://blinkgamesrifa.vercel.app";
+    const backendURL =
+      process.env.BASE_URL_BACKEND || "https://blinkgames-backend-p4as.onrender.com";
+
+    // Preferência do MP — external_reference e metadata AMARRADOS ao usuário logado
+    const prefData = {
       items,
       back_urls: {
-        success: "https://blinkgamesrifa.vercel.app/sucesso.html",
-        failure: "https://blinkgamesrifa.vercel.app/erro.html",
-        pending: "https://blinkgamesrifa.vercel.app/aguardando.html",
+        success: `${frontendURL}/sucesso.html`,
+        failure: `${frontendURL}/erro.html`,
+        pending: `${frontendURL}/aguardando.html`,
       },
       auto_return: "approved",
       statement_descriptor: "BLINKGAMES",
       binary_mode: true,
-      metadata: { userId, cart },
-      external_reference: userId,
-      notification_url: "https://blinkgames-backend-p4as.onrender.com/ipn/webhooks/payment",
+      external_reference: String(userId),
+      metadata: { userId: String(userId), cart },
+      notification_url: `${backendURL}/ipn/webhooks/payment`,
     };
 
-    const result = await client.preference.create(preference);
+    // ⚠️ SDK v2: precisa enviar como { body: ... }
+    const mpRes = await preference.create({ body: prefData });
 
-    const newOrder = await Order.create({
-      user: userId,
-      preferenceId: result.id,
-      items: cart,
+    const preferenceId =
+      mpRes?.id || mpRes?.body?.id || mpRes?.body?.preference_id;
+    const initPoint = mpRes?.init_point || mpRes?.body?.init_point;
+
+    if (!preferenceId || !initPoint) {
+      console.error("❌ Resposta inesperada do Mercado Pago:", mpRes);
+      return res.status(500).json({ error: "Falha ao gerar link de pagamento" });
+    }
+
+    // Salva ordem vinculada ao usuário autenticado
+    const total = cart.reduce(
+      (acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 1),
+      0
+    );
+
+    await Order.create({
+      userId,
+      mpPreferenceId: preferenceId,
+      cart,
+      total,
       status: "pending",
     });
 
-    console.log(`🗃️ Ordem registrada: ${newOrder._id} — preference: ${result.id}`);
-
-    res.json({
-      init_point: result.init_point,
-      preference_id: result.id,
-      orderId: newOrder._id,
+    return res.status(200).json({
+      checkoutUrl: initPoint,
+      preferenceId,
     });
   } catch (err) {
-    console.error("Erro ao criar checkout:", err);
-    res.status(500).json({ error: "Erro ao criar checkout" });
+    console.error("💥 Erro ao criar checkout:", err);
+    return res.status(500).json({
+      error:
+        err?.response?.data?.message ||
+        err?.message ||
+        "Erro ao criar checkout",
+    });
   }
 };
 

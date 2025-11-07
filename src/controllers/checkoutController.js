@@ -1,37 +1,31 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v7.3 Produção Final)
+// 💳 BlinkGames — checkoutController.js (v7.4 Produção Estável)
 // ============================================================
 
 import Order from "../models/Order.js";
 import { client } from "../config/mercadoPago.js";
 import jwt from "jsonwebtoken";
 
-// ============================================================
-// 🔹 Criar checkout com usuário autenticado (produção real)
-// ============================================================
 export const createCheckout = async (req, res) => {
   try {
-    // 🔐 Confere se veio token JWT decodificado via middleware
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ error: "Usuário não autenticado." });
-    }
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: "Usuário não autenticado." });
+
+    const token = authHeader.split(" ")[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = decoded.id;
 
     const { cart } = req.body;
-
-    if (!cart || !Array.isArray(cart) || cart.length === 0) {
+    if (!cart || !Array.isArray(cart) || cart.length === 0)
       return res.status(400).json({ error: "Carrinho vazio." });
-    }
 
-    // 🔹 Itens no formato do Mercado Pago
     const items = cart.map((item) => ({
       title: item.title,
-      unit_price: item.price,
-      quantity: item.quantity,
+      unit_price: Number(item.price),
+      quantity: Number(item.quantity),
       currency_id: "BRL",
     }));
 
-    // 🔹 Configuração real (produção)
     const preference = {
       items,
       back_urls: {
@@ -47,10 +41,8 @@ export const createCheckout = async (req, res) => {
       notification_url: "https://blinkgames-backend-p4as.onrender.com/ipn/webhooks/payment",
     };
 
-    // 🔹 Cria preferência no Mercado Pago
     const result = await client.preference.create(preference);
 
-    // 🔹 Registra no banco
     const newOrder = await Order.create({
       user: userId,
       preferenceId: result.id,
@@ -58,10 +50,8 @@ export const createCheckout = async (req, res) => {
       status: "pending",
     });
 
-    console.log(`🟦 Checkout criado com sucesso — Usuário: ${userId}`);
     console.log(`🗃️ Ordem registrada: ${newOrder._id} — preference: ${result.id}`);
 
-    // 🔹 Retorna para o frontend
     res.json({
       init_point: result.init_point,
       preference_id: result.id,
@@ -69,7 +59,7 @@ export const createCheckout = async (req, res) => {
     });
   } catch (err) {
     console.error("Erro ao criar checkout:", err);
-    res.status(500).json({ error: "Erro ao criar checkout." });
+    res.status(500).json({ error: "Erro ao criar checkout" });
   }
 };
 

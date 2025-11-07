@@ -1,19 +1,16 @@
 // ============================================================
-// 💳 BlinkGames — config/mercadoPago.js (v6.1 produção real)
+// 💳 BlinkGames — config/mercadoPago.js (PROD)
 // ============================================================
-
 import { MercadoPagoConfig, Preference } from "mercadopago";
 import dotenv from "dotenv";
 dotenv.config();
 
-// ✅ Client configurado para AMBIENTE DE PRODUÇÃO
-export const client = new MercadoPagoConfig({
+// Cliente Mercado Pago em PRODUÇÃO
+export const mpClient = new MercadoPagoConfig({
   accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN,
-  options: {
-    sandbox: false, // 🚀 PRODUÇÃO REAL
-  },
+  options: { sandbox: false },
 });
 
-// ✅ Instancia Preference com client ativo
-export const preference = new Preference(client);
+// Instância de Preference usando o client acima
+export const preference = new Preference(mpClient);
 

@@ -1,5 +1,5 @@
 // ============================================================
-// 💫 BlinkGames — server.js (v7.0 FINAL — CORS e rotas ajustadas)
+// 💫 BlinkGames — server.js (v7.3 PRODUÇÃO ESTÁVEL)
 // ============================================================
 
 import express from "express";
@@ -7,11 +7,10 @@ import helmet from "helmet";
 import morgan from "morgan";
 import dotenv from "dotenv";
 import cors from "cors";
-
 import connectDB from "./config/db.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
-// Rotas
+// 🔗 Rotas
 import authRoutes from "./routes/authRoutes.js";
 import raffleRoutes from "./routes/raffleRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
@@ -29,13 +28,14 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
 // ============================================================
-// 🌐 CORS — domínios liberados
+// 🌐 CORS — domínios liberados para o front
 // ============================================================
 const allowedOrigins = [
   "https://blinkgamesrifa.vercel.app",
   "https://blinkgames-frontend.vercel.app",
   "https://blinkgames-frontend-ibl2lz0wx-madhleens-projects.vercel.app",
   "http://localhost:5173",
+  "http://127.0.0.1:5500", // suporte pra testes locais
 ];
 
 app.use(
@@ -67,7 +67,7 @@ connectDB();
 // ============================================================
 app.use("/api/auth", authRoutes);
 app.use("/api/raffles", raffleRoutes);
-app.use("/api/order", orderRoutes);
+app.use("/api/orders", orderRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/checkout", checkoutRoutes);
 
@@ -80,16 +80,20 @@ const webhookPaths = [
   "/ipn/webhooks/mercadopago",
 ];
 
-app.post(webhookPaths, handleMercadoPagoWebhook);
-app.get(webhookPaths, (_, res) => res.status(200).send("OK"));
+webhookPaths.forEach((path) => {
+  app.post(path, handleMercadoPagoWebhook);
+  app.get(path, (_, res) => res.status(200).send("OK"));
+});
 
 // ============================================================
 // 🧭 Rota padrão
 // ============================================================
-app.get("/", (_, res) => res.json({ message: "🚀 BlinkGames backend rodando!" }));
+app.get("/", (_, res) => {
+  res.json({ message: "🚀 BlinkGames backend rodando em produção!" });
+});
 
 // ============================================================
-// ⚠️ Middleware de erro
+// ⚠️ Middleware de erro global
 // ============================================================
 app.use(errorHandler);
 
@@ -100,5 +104,4 @@ const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
-
 

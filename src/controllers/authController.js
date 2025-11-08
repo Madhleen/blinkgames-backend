@@ -1,23 +1,18 @@
 // ============================================================
-// 🔐 BlinkGames — controllers/authController.js (v7.6 Produção Final)
+// 🔐 BlinkGames — controllers/authController.js (v7.7 Corrigido p/ schema User)
 // ============================================================
 
 import User from "../models/User.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 
-// ============================================================
-// 🧾 Gerar token JWT
-// ============================================================
 const gerarToken = (user) => {
   return jwt.sign({ id: user._id, email: user.email, role: user.role }, process.env.JWT_SECRET, {
     expiresIn: "7d",
   });
 };
 
-// ============================================================
 // 🧍‍♀️ Registro de novo usuário
-// ============================================================
 export const registerUser = async (req, res) => {
   try {
     const { nome, email, senha } = req.body;
@@ -35,9 +30,9 @@ export const registerUser = async (req, res) => {
     const senhaHash = await bcrypt.hash(senha, salt);
 
     const novoUsuario = await User.create({
-      nome,
+      name: nome, // 🔹 Corrigido
       email,
-      senha: senhaHash,
+      password: senhaHash, // 🔹 Corrigido
       role: "user",
     });
 
@@ -47,7 +42,7 @@ export const registerUser = async (req, res) => {
       message: "Usuário registrado com sucesso!",
       user: {
         id: novoUsuario._id,
-        nome: novoUsuario.nome,
+        nome: novoUsuario.name, // 🔹 Corrigido
         email: novoUsuario.email,
       },
       token,
@@ -58,9 +53,7 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// ============================================================
 // 🔑 Login do usuário
-// ============================================================
 export const loginUser = async (req, res) => {
   try {
     const { email, senha } = req.body;
@@ -69,12 +62,12 @@ export const loginUser = async (req, res) => {
       return res.status(400).json({ error: "Preencha todos os campos." });
     }
 
-    const usuario = await User.findOne({ email });
+    const usuario = await User.findOne({ email }).select("+password");
     if (!usuario) {
       return res.status(404).json({ error: "Usuário não encontrado." });
     }
 
-    const senhaValida = await bcrypt.compare(senha, usuario.senha);
+    const senhaValida = await bcrypt.compare(senha, usuario.password);
     if (!senhaValida) {
       return res.status(401).json({ error: "Senha incorreta." });
     }
@@ -85,7 +78,7 @@ export const loginUser = async (req, res) => {
       message: "Login realizado com sucesso!",
       user: {
         id: usuario._id,
-        nome: usuario.nome,
+        nome: usuario.name,
         email: usuario.email,
         role: usuario.role,
       },
@@ -97,9 +90,7 @@ export const loginUser = async (req, res) => {
   }
 };
 
-// ============================================================
 // 👤 Perfil do usuário logado
-// ============================================================
 export const getProfile = async (req, res) => {
   try {
     const user = req.user;
@@ -107,7 +98,7 @@ export const getProfile = async (req, res) => {
       return res.status(401).json({ error: "Usuário não autenticado." });
     }
 
-    const foundUser = await User.findById(user.id).select("-senha");
+    const foundUser = await User.findById(user.id).select("-password");
     if (!foundUser) {
       return res.status(404).json({ error: "Usuário não encontrado." });
     }
@@ -119,9 +110,7 @@ export const getProfile = async (req, res) => {
   }
 };
 
-// ============================================================
 // 🚪 Logout (simbólico)
-// ============================================================
 export const logoutUser = async (req, res) => {
   try {
     res.json({ message: "Logout realizado com sucesso!" });

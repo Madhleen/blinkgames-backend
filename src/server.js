@@ -1,5 +1,5 @@
 // ============================================================
-// 💫 BlinkGames — server.js (v7.3 PRODUÇÃO ESTÁVEL)
+// 💫 BlinkGames — server.js (v7.5 PRODUÇÃO FINAL)
 // ============================================================
 
 import express from "express";
@@ -28,14 +28,14 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
 // ============================================================
-// 🌐 CORS — domínios liberados para o front
+// 🌐 CORS — domínios liberados (Front + Local)
 // ============================================================
 const allowedOrigins = [
   "https://blinkgamesrifa.vercel.app",
   "https://blinkgames-frontend.vercel.app",
   "https://blinkgames-frontend-ibl2lz0wx-madhleens-projects.vercel.app",
   "http://localhost:5173",
-  "http://127.0.0.1:5500", // suporte pra testes locais
+  "http://127.0.0.1:5500",
 ];
 
 app.use(
@@ -72,24 +72,20 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/checkout", checkoutRoutes);
 
 // ============================================================
-// ⚡ Webhook Mercado Pago
+// ⚡ Webhook Mercado Pago (produção)
 // ============================================================
-const webhookPaths = [
-  "/api/webhooks/payment",
-  "/ipn/webhooks/payment",
-  "/ipn/webhooks/mercadopago",
-];
-
-webhookPaths.forEach((path) => {
-  app.post(path, handleMercadoPagoWebhook);
-  app.get(path, (_, res) => res.status(200).send("OK"));
-});
+["/api/webhooks/payment", "/ipn/webhooks/payment", "/ipn/webhooks/mercadopago"].forEach(
+  (path) => {
+    app.post(path, handleMercadoPagoWebhook);
+    app.get(path, (_, res) => res.status(200).send("OK"));
+  }
+);
 
 // ============================================================
 // 🧭 Rota padrão
 // ============================================================
 app.get("/", (_, res) => {
-  res.json({ message: "🚀 BlinkGames backend rodando em produção!" });
+  res.json({ message: "🚀 BlinkGames backend rodando em produção estável!" });
 });
 
 // ============================================================
@@ -101,7 +97,5 @@ app.use(errorHandler);
 // 🔥 Inicialização do servidor
 // ============================================================
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Servidor ativo na porta ${PORT}`));
 

@@ -102,13 +102,11 @@ export const loginUser = async (req, res) => {
 // ============================================================
 export const getProfile = async (req, res) => {
   try {
-    // O token JWT decodificado é injetado pelo verifyToken()
     const user = req.user;
     if (!user) {
       return res.status(401).json({ error: "Usuário não autenticado." });
     }
 
-    // Busca o usuário no banco de dados (caso precise de dados completos)
     const foundUser = await User.findById(user.id).select("-senha");
     if (!foundUser) {
       return res.status(404).json({ error: "Usuário não encontrado." });
@@ -122,11 +120,10 @@ export const getProfile = async (req, res) => {
 };
 
 // ============================================================
-// 🚪 Logout (opcional, apenas simbólico)
+// 🚪 Logout (simbólico)
 // ============================================================
 export const logoutUser = async (req, res) => {
   try {
-    // Apenas para front-end limpar token, backend não precisa invalidar JWT
     res.json({ message: "Logout realizado com sucesso!" });
   } catch (err) {
     console.error("❌ Erro no logout:", err);

@@ -1,16 +1,27 @@
 // ============================================================
-// 💳 BlinkGames — config/mercadoPago.js (PROD)
+// 💳 BlinkGames — config/mercadoPago.js (v7.3 ESTÁVEL)
 // ============================================================
-import { MercadoPagoConfig, Preference } from "mercadopago";
+
+import { MercadoPagoConfig, Payment } from "mercadopago";
 import dotenv from "dotenv";
+
 dotenv.config();
 
-// Cliente Mercado Pago em PRODUÇÃO
-export const mpClient = new MercadoPagoConfig({
+// ============================================================
+// 🧩 Inicialização do SDK
+// ============================================================
+export const client = new MercadoPagoConfig({
   accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN,
-  options: { sandbox: false },
+  options: { timeout: 5000 },
 });
 
-// Instância de Preference usando o client acima
-export const preference = new Preference(mpClient);
+// ============================================================
+// 💰 Exporta classes principais (Payment etc.)
+// ============================================================
+export { Payment };
+
+// ============================================================
+// ✅ Log de confirmação
+// ============================================================
+console.log("💳 Mercado Pago configurado com sucesso!");
 

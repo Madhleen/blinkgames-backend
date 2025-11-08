@@ -1,5 +1,5 @@
 // ============================================================
-// 🔐 BlinkGames — routes/authRoutes.js (v8.1 Produção Corrigida)
+// 🔐 BlinkGames — routes/authRoutes.js (v8.2 Produção Corrigida Final)
 // ============================================================
 
 import express from "express";
@@ -7,8 +7,9 @@ import {
   registerUser,
   loginUser,
   getProfile,
+  logoutUser,
 } from "../controllers/authController.js";
-import { verifyToken } from "../middlewares/auth.js"; // ✅ caminho corrigido (middlewares no plural)
+import { verifyToken } from "../middleware/auth.js"; // ✅ CORRIGIDO: pasta 'middleware' (sem 's')
 
 const router = express.Router();
 
@@ -18,6 +19,9 @@ router.post("/login", loginUser);
 
 // 🔹 Perfil autenticado
 router.get("/me", verifyToken, getProfile);
+
+// 🔹 Logout simbólico
+router.post("/logout", logoutUser);
 
 export default router;
 

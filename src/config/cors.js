@@ -1,19 +1,21 @@
 // ============================================================
-// 🌐 BlinkGames — config/cors.js (v7.5 Produção Estável)
+// 🌐 BlinkGames — config/cors.js (v7.7 Produção Corrigido)
 // ============================================================
 
 const allowedOrigins = [
   "https://blinkgamesrifa.vercel.app",
   "https://blinkgames-frontend.vercel.app",
   "https://blinkgames-frontend-ibl2lz0wx-madhleens-projects.vercel.app",
+  "https://blinkgames-frontend-r0eo0jk1q-madhleens-projects.vercel.app",
+  "https://blinkgames-frontend-4qx5kvagp-madhleens-projects.vercel.app", // 🟢 novo domínio vercel liberado
   "http://localhost:5173",
-  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5500",
 ];
 
 const corsOptions = {
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
-      console.log("✅ CORS liberado para:", origin || "requisicao interna");
+      console.log("✅ CORS liberado para:", origin || "requisição interna");
       callback(null, true);
     } else {
       console.warn("🚫 CORS bloqueado para:", origin);

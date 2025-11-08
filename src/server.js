@@ -1,5 +1,5 @@
 // ============================================================
-// 💫 BlinkGames — server.js (v7.6 PRODUÇÃO FINAL CORRIGIDO CORS)
+// 💫 BlinkGames — server.js (v7.7 PRODUÇÃO FINAL CORS ATUALIZADO)
 // ============================================================
 
 import express from "express";
@@ -28,13 +28,14 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
 // ============================================================
-// 🌐 CORS — domínios liberados (Frontend + Local + Render Preview)
+// 🌐 CORS — domínios liberados (Frontend + Local + Previews Vercel)
 // ============================================================
 const allowedOrigins = [
   "https://blinkgamesrifa.vercel.app",
   "https://blinkgames-frontend.vercel.app",
   "https://blinkgames-frontend-ibl2lz0wx-madhleens-projects.vercel.app",
-  "https://blinkgames-frontend-r0eo0jk1q-madhleens-projects.vercel.app", // 🟢 novo domínio liberado
+  "https://blinkgames-frontend-r0eo0jk1q-madhleens-projects.vercel.app",
+  "https://blinkgames-frontend-4qx5kvagp-madhleens-projects.vercel.app", // 🟢 adicionado agora
   "http://localhost:5173",
   "http://127.0.0.1:5500",
 ];

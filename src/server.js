@@ -1,5 +1,5 @@
 // ============================================================
-// 💫 BlinkGames — server.js (v7.7 PRODUÇÃO FINAL CORS ATUALIZADO)
+// 💫 BlinkGames — server.js (v7.8 Produção Final Revisado)
 // ============================================================
 
 import express from "express";
@@ -18,6 +18,9 @@ import adminRoutes from "./routes/adminRoutes.js";
 import checkoutRoutes from "./routes/checkoutRoutes.js";
 import { handleMercadoPagoWebhook } from "./controllers/webhookController.js";
 
+// ============================================================
+// ⚙️ Configurações iniciais
+// ============================================================
 dotenv.config();
 const app = express();
 
@@ -35,7 +38,8 @@ const allowedOrigins = [
   "https://blinkgames-frontend.vercel.app",
   "https://blinkgames-frontend-ibl2lz0wx-madhleens-projects.vercel.app",
   "https://blinkgames-frontend-r0eo0jk1q-madhleens-projects.vercel.app",
-  "https://blinkgames-frontend-4qx5kvagp-madhleens-projects.vercel.app", // 🟢 adicionado agora
+  "https://blinkgames-frontend-4qx5kvagp-madhleens-projects.vercel.app",
+  "https://blinkgames-frontend-twakpm6m7-madhleens-projects.vercel.app", // 🟢 adicionado agora
   "http://localhost:5173",
   "http://127.0.0.1:5500",
 ];
@@ -49,7 +53,14 @@ app.use(
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-admin-key"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-admin-key",
+      "Origin",
+      "Accept",
+    ],
+    exposedHeaders: ["Authorization"],
   })
 );
 
@@ -76,12 +87,14 @@ app.use("/api/checkout", checkoutRoutes);
 // ============================================================
 // ⚡ Webhook Mercado Pago (produção)
 // ============================================================
-["/api/webhooks/payment", "/ipn/webhooks/payment", "/ipn/webhooks/mercadopago"].forEach(
-  (path) => {
-    app.post(path, handleMercadoPagoWebhook);
-    app.get(path, (_, res) => res.status(200).send("OK"));
-  }
-);
+[
+  "/api/webhooks/payment",
+  "/ipn/webhooks/payment",
+  "/ipn/webhooks/mercadopago",
+].forEach((path) => {
+  app.post(path, handleMercadoPagoWebhook);
+  app.get(path, (_, res) => res.status(200).send("OK"));
+});
 
 // ============================================================
 // 🧭 Rota padrão

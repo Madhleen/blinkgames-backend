@@ -1,15 +1,14 @@
 // ============================================================
-// 🎟️ BlinkGames — raffleController.js (v7.0 PRODUÇÃO FINAL)
+// 🎟️ BlinkGames — raffleController.js (v8.0 PRODUÇÃO CORRIGIDO)
 // ============================================================
 
 import Raffle from "../models/Raffle.js";
 import { gerarNumerosUnicos } from "../utils/numberGenerator.js";
 
-// 🔹 Listar rifas ativas (PS5 vem primeiro)
+// 🔹 Listar rifas ativas
 export const getRaffles = async (req, res) => {
   try {
     const rifas = await Raffle.find({ active: true });
-
     const ordenadas = rifas.sort((a, b) => {
       const aTitle = (a.title || a.titulo || "").toLowerCase();
       const bTitle = (b.title || b.titulo || "").toLowerCase();
@@ -17,7 +16,6 @@ export const getRaffles = async (req, res) => {
       if (bTitle.includes("ps5")) return 1;
       return 0;
     });
-
     res.json(ordenadas);
   } catch (err) {
     console.error("❌ Erro ao buscar rifas:", err);
@@ -37,7 +35,7 @@ export const getRaffleById = async (req, res) => {
   }
 };
 
-// 🔹 Criar nova rifa (apenas admin)
+// 🔹 Criar nova rifa
 export const createRaffle = async (req, res) => {
   try {
     const {
@@ -75,7 +73,7 @@ export const createRaffle = async (req, res) => {
   }
 };
 
-// 🔹 Atualizar rifa (admin)
+// 🔹 Atualizar rifa
 export const updateRaffle = async (req, res) => {
   try {
     const updated = await Raffle.findByIdAndUpdate(req.params.id, req.body, {
@@ -89,7 +87,7 @@ export const updateRaffle = async (req, res) => {
   }
 };
 
-// 🔹 Desativar rifa (admin)
+// 🔹 Desativar rifa
 export const deactivateRaffle = async (req, res) => {
   try {
     const updated = await Raffle.findByIdAndUpdate(
@@ -105,7 +103,7 @@ export const deactivateRaffle = async (req, res) => {
   }
 };
 
-// 🔹 Gerar números disponíveis (usado antes de comprar)
+// 🔹 Gerar números disponíveis
 export const generateNumbers = async (req, res) => {
   try {
     const { id } = req.params;
@@ -127,16 +125,30 @@ export const generateNumbers = async (req, res) => {
   }
 };
 
-// 🔹 Excluir rifa (apenas admin)
-export const deleteRaffle = async (req, res) => {
+// 🔹 Reservar números da rifa (para carrinho)
+export const reserveNumbers = async (req, res) => {
   try {
     const { id } = req.params;
-    const rifa = await Raffle.findByIdAndDelete(id);
+    const { numeros } = req.body;
+
+    const rifa = await Raffle.findById(id);
     if (!rifa) return res.status(404).json({ error: "Rifa não encontrada" });
-    res.json({ message: "Rifa excluída com sucesso!" });
+
+    const disponiveis = numeros.filter((n) => !rifa.soldNumbers.includes(n));
+    if (disponiveis.length !== numeros.length) {
+      return res.status(400).json({ error: "Alguns números já foram reservados." });
+    }
+
+    rifa.soldNumbers.push(...disponiveis);
+    await rifa.save();
+
+    res.json({
+      message: "Números reservados com sucesso!",
+      numeros: disponiveis,
+    });
   } catch (err) {
-    console.error("❌ Erro ao excluir rifa:", err);
-    res.status(500).json({ error: "Erro ao excluir rifa" });
+    console.error("❌ Erro ao reservar números:", err);
+    res.status(500).json({ error: "Erro ao reservar números" });
   }
 };
 

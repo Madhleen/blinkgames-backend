@@ -1,5 +1,5 @@
 // ============================================================
-// 🎟️ BlinkGames — routes/raffleRoutes.js (v8.0 Produção)
+// 🎟️ BlinkGames — routes/raffleRoutes.js (v8.1 Corrigido)
 // ============================================================
 
 import express from "express";
@@ -10,6 +10,7 @@ import {
   updateRaffle,
   deactivateRaffle,
   generateNumbers,
+  reserveNumbers,
 } from "../controllers/raffleController.js";
 
 import { verifyToken } from "../middleware/auth.js";
@@ -20,13 +21,14 @@ const router = express.Router();
 router.get("/", getRaffles);
 router.get("/:id", getRaffleById);
 
-// 🔹 Rotas protegidas (admin)
+// 🔹 Rotas protegidas
 router.post("/", verifyToken, createRaffle);
 router.put("/:id", verifyToken, updateRaffle);
 router.put("/:id/desativar", verifyToken, deactivateRaffle);
 
-// 🔹 Geração de números
+// 🔹 Geração e reserva de números
 router.post("/:id/generate", verifyToken, generateNumbers);
+router.post("/:id/reserve", verifyToken, reserveNumbers);
 
 export default router;
 

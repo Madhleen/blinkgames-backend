@@ -1,5 +1,5 @@
 // ============================================================
-// 🌐 BlinkGames — config/cors.js (v7.7 Produção Corrigido)
+// 🌐 BlinkGames — config/cors.js (v7.8 Produção Corrigido)
 // ============================================================
 
 const allowedOrigins = [
@@ -7,7 +7,8 @@ const allowedOrigins = [
   "https://blinkgames-frontend.vercel.app",
   "https://blinkgames-frontend-ibl2lz0wx-madhleens-projects.vercel.app",
   "https://blinkgames-frontend-r0eo0jk1q-madhleens-projects.vercel.app",
-  "https://blinkgames-frontend-4qx5kvagp-madhleens-projects.vercel.app", // 🟢 novo domínio vercel liberado
+  "https://blinkgames-frontend-4qx5kvagp-madhleens-projects.vercel.app",
+  "https://blinkgames-frontend-qp3emlihr-madhleens-projects.vercel.app", // 🟢 novo domínio liberado
   "http://localhost:5173",
   "http://127.0.0.1:5500",
 ];

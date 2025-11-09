@@ -1,5 +1,5 @@
 // ============================================================
-// 💫 BlinkGames — server.js (v7.8 Produção Final Revisado)
+// 💫 BlinkGames — server.js (v8.0 Produção Final Corrigido CORS + Segurança)
 // ============================================================
 
 import express from "express";
@@ -25,13 +25,13 @@ dotenv.config();
 const app = express();
 
 // ============================================================
-// 🧩 Middleware base
+// 🧩 Middlewares base
 // ============================================================
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
 // ============================================================
-// 🌐 CORS — domínios liberados (Frontend + Local + Previews Vercel)
+// 🌐 CORS — domínios liberados
 // ============================================================
 const allowedOrigins = [
   "https://blinkgamesrifa.vercel.app",
@@ -39,7 +39,7 @@ const allowedOrigins = [
   "https://blinkgames-frontend-ibl2lz0wx-madhleens-projects.vercel.app",
   "https://blinkgames-frontend-r0eo0jk1q-madhleens-projects.vercel.app",
   "https://blinkgames-frontend-4qx5kvagp-madhleens-projects.vercel.app",
-  "https://blinkgames-frontend-twakpm6m7-madhleens-projects.vercel.app", // 🟢 adicionado agora
+  "https://blinkgames-frontend-twakpm6m7-madhleens-projects.vercel.app",
   "http://localhost:5173",
   "http://127.0.0.1:5500",
 ];
@@ -47,7 +47,13 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        /\.vercel\.app$/.test(origin)
+      ) {
+        return callback(null, true);
+      }
       console.warn(`🚫 CORS bloqueado: ${origin}`);
       return callback(new Error("CORS não permitido"));
     },
@@ -85,7 +91,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/checkout", checkoutRoutes);
 
 // ============================================================
-// ⚡ Webhook Mercado Pago (produção)
+// ⚡ Webhook Mercado Pago
 // ============================================================
 [
   "/api/webhooks/payment",
@@ -100,12 +106,20 @@ app.use("/api/checkout", checkoutRoutes);
 // 🧭 Rota padrão
 // ============================================================
 app.get("/", (_, res) => {
-  res.json({ message: "🚀 BlinkGames backend rodando em produção estável!" });
+  res.json({ message: "🚀 BlinkGames backend rodando com CORS liberado!" });
 });
 
 // ============================================================
-// ⚠️ Middleware de erro global
+// ⚠️ Middleware global de erro
 // ============================================================
+app.use((err, req, res, next) => {
+  if (err.message === "CORS não permitido") {
+    console.error(`🚫 Rejeitado CORS: ${req.headers.origin}`);
+    return res.status(403).json({ error: "CORS não permitido para esta origem." });
+  }
+  next(err);
+});
+
 app.use(errorHandler);
 
 // ============================================================

@@ -1,11 +1,13 @@
 // ============================================================
-// 🎟️ BlinkGames — raffleController.js (v8.2 Produção Corrigida e Padronizada)
+// 🎟️ BlinkGames — raffleController.js (v8.3 Produção Sincronizada com Pagamentos)
 // ============================================================
 
 import Raffle from "../models/Raffle.js";
 import { gerarNumerosUnicos } from "../utils/numberGenerator.js";
 
+// ============================================================
 // 🔹 Listar rifas ativas
+// ============================================================
 export const getRaffles = async (req, res) => {
   try {
     const rifas = await Raffle.find({ active: true });
@@ -19,23 +21,27 @@ export const getRaffles = async (req, res) => {
     res.json(ordenadas);
   } catch (err) {
     console.error("❌ Erro ao buscar rifas:", err);
-    res.status(500).json({ error: "Erro ao buscar rifas" });
+    res.status(500).json({ error: "Erro ao buscar rifas." });
   }
 };
 
+// ============================================================
 // 🔹 Detalhar uma rifa
+// ============================================================
 export const getRaffleById = async (req, res) => {
   try {
     const rifa = await Raffle.findById(req.params.id);
-    if (!rifa) return res.status(404).json({ error: "Rifa não encontrada" });
+    if (!rifa) return res.status(404).json({ error: "Rifa não encontrada." });
     res.json(rifa);
   } catch (err) {
     console.error("❌ Erro ao buscar rifa:", err);
-    res.status(500).json({ error: "Erro ao buscar rifa" });
+    res.status(500).json({ error: "Erro ao buscar rifa." });
   }
 };
 
+// ============================================================
 // 🔹 Criar nova rifa
+// ============================================================
 export const createRaffle = async (req, res) => {
   try {
     const {
@@ -69,25 +75,29 @@ export const createRaffle = async (req, res) => {
     res.status(201).json(novaRifa);
   } catch (err) {
     console.error("❌ Erro ao criar rifa:", err);
-    res.status(500).json({ error: "Erro ao criar rifa" });
+    res.status(500).json({ error: "Erro ao criar rifa." });
   }
 };
 
+// ============================================================
 // 🔹 Atualizar rifa
+// ============================================================
 export const updateRaffle = async (req, res) => {
   try {
     const updated = await Raffle.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
     });
-    if (!updated) return res.status(404).json({ error: "Rifa não encontrada" });
+    if (!updated) return res.status(404).json({ error: "Rifa não encontrada." });
     res.json(updated);
   } catch (err) {
     console.error("❌ Erro ao atualizar rifa:", err);
-    res.status(500).json({ error: "Erro ao atualizar rifa" });
+    res.status(500).json({ error: "Erro ao atualizar rifa." });
   }
 };
 
+// ============================================================
 // 🔹 Desativar rifa
+// ============================================================
 export const deactivateRaffle = async (req, res) => {
   try {
     const updated = await Raffle.findByIdAndUpdate(
@@ -95,22 +105,23 @@ export const deactivateRaffle = async (req, res) => {
       { active: false },
       { new: true }
     );
-    if (!updated) return res.status(404).json({ error: "Rifa não encontrada" });
+    if (!updated) return res.status(404).json({ error: "Rifa não encontrada." });
     res.json({ message: "Rifa desativada com sucesso!" });
   } catch (err) {
     console.error("❌ Erro ao desativar rifa:", err);
-    res.status(500).json({ error: "Erro ao desativar rifa" });
+    res.status(500).json({ error: "Erro ao desativar rifa." });
   }
 };
 
-// 🔹 Gerar números disponíveis
+// ============================================================
+// 🔹 Gerar números disponíveis (pré-reserva)
+// ============================================================
 export const generateNumbers = async (req, res) => {
   try {
     const { id } = req.params;
     const { quantidade } = req.body;
     const rifa = await Raffle.findById(id);
-
-    if (!rifa) return res.status(404).json({ error: "Rifa não encontrada" });
+    if (!rifa) return res.status(404).json({ error: "Rifa não encontrada." });
 
     const numerosGerados = gerarNumerosUnicos(
       quantidade,
@@ -121,11 +132,13 @@ export const generateNumbers = async (req, res) => {
     res.json({ numeros: numerosGerados });
   } catch (err) {
     console.error("❌ Erro ao gerar números:", err);
-    res.status(500).json({ error: "Erro ao gerar números" });
+    res.status(500).json({ error: "Erro ao gerar números." });
   }
 };
 
-// 🔹 Reservar números da rifa (para carrinho)
+// ============================================================
+// 🔹 Reservar números (sem gravar venda definitiva)
+// ============================================================
 export const reserveNumbers = async (req, res) => {
   try {
     const { id } = req.params;
@@ -136,30 +149,23 @@ export const reserveNumbers = async (req, res) => {
     }
 
     const rifa = await Raffle.findById(id);
-    if (!rifa) return res.status(404).json({ error: "Rifa não encontrada" });
+    if (!rifa) return res.status(404).json({ error: "Rifa não encontrada." });
 
-    // 🔧 garante que o campo sempre exista
-    rifa.soldNumbers = rifa.soldNumbers || [];
+    const reservados = new Set(rifa.soldNumbers || []);
+    const disponiveis = numeros.filter((n) => !reservados.has(n));
 
-    // 🔒 verifica duplicações
-    const disponiveis = numeros.filter((n) => !rifa.soldNumbers.includes(n));
     if (disponiveis.length !== numeros.length) {
-      return res
-        .status(400)
-        .json({ error: "Alguns números já foram reservados ou vendidos." });
+      return res.status(400).json({ error: "Alguns números já foram reservados/vendidos." });
     }
 
-    // 💾 salva a reserva
-    rifa.soldNumbers.push(...disponiveis);
-    await rifa.save();
-
-    res.json({
-      message: "Números reservados com sucesso!",
+    // Não salva no banco (reserva temporária)
+    return res.json({
+      message: "Números disponíveis e reservados temporariamente.",
       numeros: disponiveis,
     });
   } catch (err) {
     console.error("💥 Erro ao reservar números:", err);
-    res.status(500).json({ error: "Erro ao reservar números" });
+    res.status(500).json({ error: "Erro ao reservar números." });
   }
 };
 

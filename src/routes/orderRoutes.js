@@ -1,5 +1,5 @@
 // ============================================================
-// 🧾 BlinkGames — routes/orderRoutes.js (v8.0 Produção)
+// 🧾 BlinkGames — routes/orderRoutes.js (v8.1 Produção Integrada)
 // ============================================================
 
 import express from "express";
@@ -8,11 +8,16 @@ import { verifyToken } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// 🔹 Criar pedido (checkout)
-router.post("/checkout", verifyToken, createCheckout);
+// ============================================================
+// 💳 Criar pedido (checkout)
+// ============================================================
+router.post("/", verifyToken, createCheckout); // ✅ mantém compatível com /api/orders no CheckoutAPI
 
-// 🔹 Consultar pedidos do usuário autenticado
-router.get("/me", verifyToken, getUserOrders);
+// ============================================================
+// 📦 Buscar pedidos do usuário logado
+// ============================================================
+// ✅ compatível com OrdersAPI.getMyOrders(token)
+router.get("/my", verifyToken, getUserOrders);
 
 export default router;
 

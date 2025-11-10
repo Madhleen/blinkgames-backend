@@ -1,5 +1,5 @@
 // ============================================================
-// 📩 BlinkGames — webhookController.js (v8.0 Produção Final Corrigido)
+// 📩 BlinkGames — webhookController.js (v8.2 Produção Integrada)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -16,9 +16,7 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     const topic = req.query.topic || req.body.type;
     const id = req.query.id || req.body.data?.id;
 
-    if (!topic || !id)
-      return res.status(400).json({ error: "Webhook inválido." });
-
+    if (!topic || !id) return res.status(400).json({ error: "Webhook inválido." });
     console.log(`📩 Webhook recebido — topic: ${topic} | ID: ${id}`);
 
     if (topic !== "payment") {
@@ -28,13 +26,17 @@ export const handleMercadoPagoWebhook = async (req, res) => {
 
     // 🔹 Busca pagamento no Mercado Pago
     const payment = await new Payment(client).get({ id });
-    const { status, external_reference, metadata } = payment;
-    const userId = external_reference;
+    const { status, metadata } = payment;
+    const userId = metadata?.userId;
     const cart = metadata?.cart || [];
 
     console.log(`💰 Pagamento ${id} (${status}) | userId: ${userId}`);
 
-    // 🔹 Busca usuário
+    if (!userId) {
+      console.warn("⚠️ Nenhum userId recebido no metadata!");
+      return res.status(400).json({ error: "Pagamento sem referência de usuário." });
+    }
+
     const user = await User.findById(userId);
     if (!user) {
       console.warn("⚠️ Usuário não encontrado para pagamento aprovado.");
@@ -42,43 +44,45 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     }
 
     // 🔹 Atualiza status da Order
-    await Order.findOneAndUpdate(
-      { preferenceId: payment.order?.id || payment.id },
+    const order = await Order.findOneAndUpdate(
+      { mpPreferenceId: metadata?.preferenceId || payment.order?.id || payment.id },
       { status },
       { new: true }
     );
 
     if (status === "approved") {
-      // 🔹 Atualiza rifas vendidas
       for (const item of cart) {
+        if (!item?.raffleId || !Array.isArray(item?.numeros)) continue;
+
+        // Atualiza rifas vendidas
         await Raffle.findByIdAndUpdate(item.raffleId, {
           $addToSet: { soldNumbers: { $each: item.numeros } },
         });
 
-        // 🔹 Adiciona compra ao histórico do usuário
+        // Adiciona compra ao histórico do usuário
         user.purchases.push({
           raffleId: item.raffleId,
           numeros: item.numeros,
-          precoUnit: item.price,
+          precoUnit: item.precoUnit || item.price || 1,
           paymentId: id,
           date: new Date(),
         });
       }
 
       await user.save();
-
       console.log(`✅ Pagamento ${id} aprovado e salvo para ${user.name}`);
-      return res.redirect("https://blinkgames-frontend.vercel.app/sucesso.html");
+
+      return res.redirect(`${process.env.BASE_URL_FRONTEND}/sucesso.html`);
     }
 
     if (status === "pending") {
       console.log(`⏳ Pagamento ${id} pendente.`);
-      return res.redirect("https://blinkgames-frontend.vercel.app/aguardando.html");
+      return res.redirect(`${process.env.BASE_URL_FRONTEND}/aguardando.html`);
     }
 
     if (status === "rejected" || status === "cancelled") {
       console.log(`❌ Pagamento ${id} rejeitado/cancelado.`);
-      return res.redirect("https://blinkgames-frontend.vercel.app/erro.html");
+      return res.redirect(`${process.env.BASE_URL_FRONTEND}/erro.html`);
     }
 
     return res.status(200).send("ok");

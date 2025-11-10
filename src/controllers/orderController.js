@@ -1,3 +1,7 @@
+// ============================================================
+// 💳 BlinkGames — orderController.js (v8.0 Produção Final)
+// ============================================================
+
 import Order from "../models/Order.js";
 import Raffle from "../models/Raffle.js";
 import User from "../models/User.js";
@@ -6,49 +10,44 @@ import { client } from "../config/mercadoPago.js";
 import { Preference } from "mercadopago";
 
 // ============================================================
-// 💳 Criar ordem e preference no Mercado Pago
+// 💰 Criar ordem e preference no Mercado Pago
 // ============================================================
 export const createCheckout = async (req, res) => {
   try {
     const userId = req.user?.id;
-    const { cart } = req.body; // [{ raffleId || id, qtd || quantity }]
+    const { cart } = req.body; // [{ raffleId, quantity }]
 
     if (!userId || !cart || cart.length === 0) {
       return res.status(400).json({ error: "Carrinho vazio ou usuário inválido." });
     }
 
-    // 🔹 Busca usuário no banco
+    // 🔍 Busca usuário
     const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ error: "Usuário não encontrado." });
-    }
+    if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
 
     const itens = [];
     const orderItens = [];
 
-    // 🔹 Monta os itens da compra
     for (const item of cart) {
       const raffleId = item.raffleId || item.id || item._id;
       const qtd = item.qtd || item.quantity || 1;
 
       const rifa = await Raffle.findById(raffleId);
-      if (!rifa) {
-        console.warn("⚠️ Rifa não encontrada:", raffleId);
-        continue;
-      }
+      if (!rifa) continue;
 
-      const numeros = gerarNumerosUnicos(qtd, rifa.maxNumeros, rifa.numerosVendidos);
+      const numeros = gerarNumerosUnicos(qtd, rifa.totalNumbers, rifa.soldNumbers);
 
       orderItens.push({
         raffleId: rifa._id,
         numeros,
-        precoUnit: rifa.preco,
+        precoUnit: rifa.price,
+        titulo: rifa.title,
       });
 
       itens.push({
-        title: rifa.titulo,
+        title: rifa.title,
         quantity: Number(qtd),
-        unit_price: Number(rifa.preco),
+        unit_price: Number(rifa.price),
         currency_id: "BRL",
       });
     }
@@ -76,58 +75,59 @@ export const createCheckout = async (req, res) => {
       payerData.identification = { type: "CPF", number: user.cpf };
     }
 
-    console.log("🧾 Criando preferência Mercado Pago...");
-
     const mpPreference = await preference.create({
       body: {
         items: itens,
         payer: payerData,
         metadata: { userId, cart: orderItens },
         back_urls: {
-          success: `${process.env.BASE_URL_FRONTEND}/pagamento/sucesso`,
-          failure: `${process.env.BASE_URL_FRONTEND}/pagamento/erro`,
-          pending: `${process.env.BASE_URL_FRONTEND}/pagamento/pendente`,
+          success: `${process.env.BASE_URL_FRONTEND}/sucesso.html`,
+          failure: `${process.env.BASE_URL_FRONTEND}/erro.html`,
+          pending: `${process.env.BASE_URL_FRONTEND}/aguardando.html`,
         },
         auto_return: "approved",
-        notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`,
+        notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/payment`,
       },
     });
 
     if (!mpPreference?.id || !mpPreference?.init_point) {
-      console.error("❌ Falha ao criar preferência Mercado Pago:", mpPreference);
       return res.status(500).json({ error: "Erro ao criar preferência no Mercado Pago." });
     }
 
     // ============================================================
-    // 💾 Salva pedido no banco
+    // 💾 Salva o pedido no banco
     // ============================================================
     const order = new Order({
       userId,
       itens: orderItens,
       total,
       status: "pending",
-      mpPreferenceId: mpPreference.id,
+      preferenceId: mpPreference.id,
     });
 
     await order.save();
 
-    console.log("✅ Pedido salvo com sucesso:", order._id);
+    console.log("✅ Pedido salvo:", order._id);
 
-    res.json({ init_point: mpPreference.init_point });
+    return res.json({ init_point: mpPreference.init_point });
   } catch (err) {
     console.error("❌ Erro ao criar checkout:", err);
-    res.status(500).json({ error: err.message || "Erro ao criar checkout." });
+    return res.status(500).json({ error: "Erro ao criar checkout." });
   }
 };
 
 // ============================================================
-// 📦 Buscar ordens do usuário logado
+// 📦 Buscar ordens do usuário logado (usado em “Minhas Rifas” e sucesso.js)
 // ============================================================
 export const getUserOrders = async (req, res) => {
   try {
-    const orders = await Order.find({ userId: req.user.id }).sort({
-      createdAt: -1,
-    });
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Usuário não autenticado." });
+
+    const orders = await Order.find({ userId })
+      .populate("itens.raffleId", "title image price")
+      .sort({ createdAt: -1 });
+
     res.json(orders);
   } catch (err) {
     console.error("❌ Erro ao buscar ordens:", err);

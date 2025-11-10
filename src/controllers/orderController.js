@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — orderController.js (v8.6 Produção Final SDK v2 Corrigido)
+// 💳 BlinkGames — orderController.js (v8.6 Produção • SDK v2 safe)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -9,31 +9,37 @@ import { gerarNumerosUnicos } from "../utils/numberGenerator.js";
 import { client } from "../config/mercadoPago.js";
 import { Preference } from "mercadopago";
 
+// ------------------------------------------------------------
+// Helpers
+// ------------------------------------------------------------
+function pickPrefField(resp, key) {
+  // Tenta nas duas formas (top-level e .body)
+  return resp?.[key] ?? resp?.body?.[key] ?? null;
+}
+
 // ============================================================
 // 💰 Criar ordem e preference no Mercado Pago
 // ============================================================
 export const createCheckout = async (req, res) => {
   try {
     const userId = req.user?.id;
-    const { cart } = req.body; // [{ raffleId, quantity }]
+    const { cart } = req.body; // [{ raffleId, quantity, ... }]
 
-    if (!userId || !cart || cart.length === 0) {
+    if (!userId || !Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Carrinho vazio ou usuário inválido." });
     }
 
-    // 🔍 Busca usuário
+    // 🔍 Usuário
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
 
     const itens = [];
     const orderItens = [];
 
-    // ============================================================
-    // 🧩 Monta itens e gera números únicos
-    // ============================================================
+    // 🧩 Monta itens e gera números
     for (const item of cart) {
       const raffleId = item.raffleId || item.id || item._id;
-      const qtd = item.qtd || item.quantity || 1;
+      const qtd = Math.max(1, Number(item.qtd || item.quantity || 1));
 
       const rifa = await Raffle.findById(raffleId);
       if (!rifa) continue;
@@ -43,13 +49,13 @@ export const createCheckout = async (req, res) => {
       orderItens.push({
         raffleId: rifa._id,
         numeros,
-        precoUnit: rifa.price,
+        precoUnit: Number(rifa.price),
         titulo: rifa.title,
       });
 
       itens.push({
         title: rifa.title,
-        quantity: Number(qtd),
+        quantity: qtd,
         unit_price: Number(rifa.price),
         currency_id: "BRL",
       });
@@ -64,21 +70,18 @@ export const createCheckout = async (req, res) => {
       0
     );
 
-    // ============================================================
-    // 🧠 Criação da preferência Mercado Pago (SDK v2)
-    // ============================================================
+    // 🧠 Preferência Mercado Pago
     const preference = new Preference(client);
 
     const payerData = {
       name: user.name || user.nome || "Cliente BlinkGames",
       email: user.email || "sem-email@blinkgames.com",
     };
-
     if (user.cpf) {
       payerData.identification = { type: "CPF", number: user.cpf };
     }
 
-    const mpPreference = await preference.create({
+    const prefResp = await preference.create({
       body: {
         items: itens,
         payer: payerData,
@@ -93,41 +96,44 @@ export const createCheckout = async (req, res) => {
       },
     });
 
-    // ============================================================
-    // ⚙️ Validação robusta (SDK Mercado Pago v2.x)
-    // ============================================================
-    const prefId = mpPreference?.body?.id || mpPreference?.id;
+    // ⚙️ Extrai campos de forma resiliente (SDK v1/v2)
+    const prefId =
+      pickPrefField(prefResp, "id") ||
+      pickPrefField(prefResp, "preference_id");
+
     const initPoint =
-      mpPreference?.body?.init_point ||
-      mpPreference?.init_point ||
-      mpPreference?.sandbox_init_point;
+      pickPrefField(prefResp, "init_point") ||
+      pickPrefField(prefResp, "sandbox_init_point");
 
     if (!prefId || !initPoint) {
-      console.error("❌ Preferência Mercado Pago inválida:", mpPreference);
-      return res.status(500).json({ error: "Falha ao gerar link de pagamento (init_point ausente)." });
+      console.error("❌ Preferência inválida/inesperada:", {
+        topKeys: Object.keys(prefResp || {}),
+        bodyKeys: prefResp?.body ? Object.keys(prefResp.body) : null,
+        prefResp,
+      });
+      return res.status(500).json({ error: "Erro ao criar preferência no Mercado Pago." });
     }
 
-    console.log("✅ Preferência criada com sucesso:", { prefId, initPoint });
-
-    // ============================================================
-    // 💾 Salva pedido no banco
-    // ============================================================
+    // 💾 Salva pedido
     const order = new Order({
       userId,
       itens: orderItens,
       total,
       status: "pending",
-      mpPreferenceId: prefId, // campo consistente
+      preferenceId: prefId,   // campo compatível com seu schema
+      mpPreferenceId: prefId, // mantém ambos para compat (se existir no schema)
     });
 
     await order.save();
+    console.log("✅ Pedido salvo:", order._id, "pref:", prefId);
 
-    console.log("✅ Pedido salvo com sucesso:", order._id);
-
-    // ============================================================
-    // 🔁 Retorna init_point para redirecionamento no front
-    // ============================================================
-    return res.json({ init_point: initPoint });
+    // 🔁 Resposta padronizada
+    return res.json({
+      ok: true,
+      preference_id: prefId,
+      init_point: initPoint,             // usado no front
+      sandbox_init_point: pickPrefField(prefResp, "sandbox_init_point") || null,
+    });
   } catch (err) {
     console.error("❌ Erro ao criar checkout:", err);
     return res.status(500).json({ error: "Erro ao criar checkout." });
@@ -135,7 +141,7 @@ export const createCheckout = async (req, res) => {
 };
 
 // ============================================================
-// 📦 Buscar ordens do usuário logado (usado em “Minhas Rifas” e sucesso.js)
+// 📦 Ordens do usuário logado
 // ============================================================
 export const getUserOrders = async (req, res) => {
   try {

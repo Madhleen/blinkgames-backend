@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — orderController.js (v8.0 Produção Final)
+// 💳 BlinkGames — orderController.js (v8.5 Produção Corrigido SDK v2)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -28,6 +28,9 @@ export const createCheckout = async (req, res) => {
     const itens = [];
     const orderItens = [];
 
+    // ============================================================
+    // 🧩 Monta itens e gera números
+    // ============================================================
     for (const item of cart) {
       const raffleId = item.raffleId || item.id || item._id;
       const qtd = item.qtd || item.quantity || 1;
@@ -67,7 +70,7 @@ export const createCheckout = async (req, res) => {
     const preference = new Preference(client);
 
     const payerData = {
-      name: user.nome || "Cliente BlinkGames",
+      name: user.name || user.nome || "Cliente BlinkGames",
       email: user.email || "sem-email@blinkgames.com",
     };
 
@@ -90,26 +93,36 @@ export const createCheckout = async (req, res) => {
       },
     });
 
-    if (!mpPreference?.id || !mpPreference?.init_point) {
+    // ============================================================
+    // ⚙️ Valida retorno Mercado Pago
+    // ============================================================
+    const prefId = mpPreference?.body?.id;
+    const initPoint = mpPreference?.body?.init_point;
+
+    if (!prefId || !initPoint) {
+      console.error("❌ Preferência Mercado Pago inválida:", mpPreference);
       return res.status(500).json({ error: "Erro ao criar preferência no Mercado Pago." });
     }
 
     // ============================================================
-    // 💾 Salva o pedido no banco
+    // 💾 Salva pedido no banco
     // ============================================================
     const order = new Order({
       userId,
       itens: orderItens,
       total,
       status: "pending",
-      preferenceId: mpPreference.id,
+      mpPreferenceId: prefId, // ✅ Corrigido campo
     });
 
     await order.save();
 
-    console.log("✅ Pedido salvo:", order._id);
+    console.log("✅ Pedido salvo com sucesso:", order._id);
 
-    return res.json({ init_point: mpPreference.init_point });
+    // ============================================================
+    // 🔁 Retorna init_point correto
+    // ============================================================
+    return res.json({ init_point: initPoint });
   } catch (err) {
     console.error("❌ Erro ao criar checkout:", err);
     return res.status(500).json({ error: "Erro ao criar checkout." });

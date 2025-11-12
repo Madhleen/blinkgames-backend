@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — orderController.js (v8.8 Corrigido Mercado Pago v2)
+// 💳 BlinkGames — orderController.js (v8.9 Estável — SDK v2 Fix Final)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -27,6 +27,7 @@ export const createCheckout = async (req, res) => {
     const itens = [];
     const orderItens = [];
 
+    // 🔹 Gera itens e números de rifa
     for (const item of cart) {
       const raffleId = item.raffleId || item.id || item._id;
       const qtd = Math.max(1, Number(item.qtd || item.quantity || 1));
@@ -55,13 +56,12 @@ export const createCheckout = async (req, res) => {
       return res.status(400).json({ error: "Nenhuma rifa válida encontrada." });
     }
 
-    const total = orderItens.reduce(
-      (sum, i) => sum + i.precoUnit * i.numeros.length,
-      0
-    );
+    const total = orderItens.reduce((sum, i) => sum + i.precoUnit * i.numeros.length, 0);
 
+    // ========================================================
+    // 🧠 Criação da preferência Mercado Pago (SDK v2)
+    // ========================================================
     const preference = new Preference(client);
-
     const payerData = {
       name: user.name || user.nome || "Cliente BlinkGames",
       email: user.email || "sem-email@blinkgames.com",
@@ -82,16 +82,42 @@ export const createCheckout = async (req, res) => {
       },
     });
 
-    // SDK v2 retorna direto em prefResp, não em body
-    const prefId = prefResp.id;
-    const initPoint = prefResp.init_point;
-    const sandboxInitPoint = prefResp.sandbox_init_point;
+    // ========================================================
+    // 🔍 Fallback inteligente para campos (SDK v2 / Render / Node)
+    // ========================================================
+    const prefId =
+      prefResp?.id ||
+      prefResp?.body?.id ||
+      prefResp?.response?.id ||
+      null;
+
+    const initPoint =
+      prefResp?.init_point ||
+      prefResp?.body?.init_point ||
+      prefResp?.response?.init_point ||
+      null;
+
+    const sandboxInitPoint =
+      prefResp?.sandbox_init_point ||
+      prefResp?.body?.sandbox_init_point ||
+      null;
+
+    console.log("✅ Preferência criada:");
+    console.log({
+      prefId,
+      initPoint,
+      sandboxInitPoint,
+      rawKeys: Object.keys(prefResp || {}),
+    });
 
     if (!prefId || !initPoint) {
-      console.error("❌ Preferência inválida:", prefResp);
+      console.error("❌ Preferência inválida:", JSON.stringify(prefResp, null, 2));
       return res.status(500).json({ error: "Erro ao criar preferência no Mercado Pago." });
     }
 
+    // ========================================================
+    // 💾 Salva o pedido
+    // ========================================================
     const order = new Order({
       userId,
       itens: orderItens,
@@ -101,8 +127,11 @@ export const createCheckout = async (req, res) => {
     });
 
     await order.save();
-    console.log("✅ Pedido salvo:", order._id, "pref:", prefId);
+    console.log("💾 Pedido salvo:", order._id, "→ pref:", prefId);
 
+    // ========================================================
+    // 🧾 Retorno padronizado para o front
+    // ========================================================
     return res.json({
       ok: true,
       preference_id: prefId,
@@ -126,7 +155,7 @@ export const getUserOrders = async (req, res) => {
     const orders = await Order.find({ userId })
       .populate("itens.raffleId", "title image price")
       .sort({ createdAt: -1 })
-      .setOptions({ strictPopulate: false }); // 👈 evita erro no populate
+      .setOptions({ strictPopulate: false });
 
     res.json(orders);
   } catch (err) {

@@ -24,15 +24,18 @@ const raffleSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
-    // 🔹 Mantém o nome correto para integração com webhook e controller
-    numerosVendidos: {
+
+    // 🔥 CAMPO CORRETO QUE O CHECKOUT + WEBHOOK USAM
+    soldNumbers: {
       type: [Number],
       default: [],
     },
+
     active: {
       type: Boolean,
       default: true,
     },
+
     drawDate: {
       type: Date,
     },

@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — orderController.js (v11.2 — FIX FINAL)
+// 💳 BlinkGames — orderController.js (v11.3 — FIX FINAL REAL)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -61,13 +61,10 @@ export const createCheckout = async (req, res) => {
           email: user.email,
         },
 
-        // ============================================================
-        // 🔥 FIX CRÍTICO — Mercado Pago SÓ aceita metadata simples
-        // ============================================================
         metadata: {
           userId: String(userId),
-          orderType: "rifa",    // campo simples só pra garantir
-          hasCart: true          // boolean simples = SEM ERRO
+          orderType: "rifa",
+          hasCart: true
         },
 
         back_urls: {
@@ -78,14 +75,10 @@ export const createCheckout = async (req, res) => {
 
         auto_return: "approved",
 
-        // 🔥 Aqui NÃO pode falhar
         notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`,
       },
     });
 
-    // ============================================================
-    // 🔍 Captura certa do PreferenceID e init_point
-    // ============================================================
     const prefId =
       pref?.id ||
       pref?.body?.id ||
@@ -110,9 +103,6 @@ export const createCheckout = async (req, res) => {
       return res.status(500).json({ error: "Erro ao criar preferência." });
     }
 
-    // ============================================================
-    // 💾 Salva pedido
-    // ============================================================
     const order = new Order({
       userId,
       itens: itensPedido,
@@ -135,6 +125,30 @@ export const createCheckout = async (req, res) => {
   } catch (err) {
     console.error("❌ Erro no createCheckout:", err);
     return res.status(500).json({ error: "Erro ao criar checkout." });
+  }
+};
+
+// ============================================================
+// 📦 Ordens do usuário (GET /api/orders/my)
+// ============================================================
+export const getUserOrders = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId)
+      return res.status(401).json({ error: "Usuário não autenticado." });
+
+    const orders = await Order.find({ userId })
+      .populate({
+        path: "itens.raffleId",
+        select: "title image price",
+        strictPopulate: false,
+      })
+      .sort({ createdAt: -1 });
+
+    return res.json(orders);
+  } catch (err) {
+    console.error("❌ Erro ao buscar ordens:", err);
+    return res.status(500).json({ error: "Erro ao buscar ordens." });
   }
 };
 

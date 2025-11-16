@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — orderController.js (v11 — Ajuste de URLs)
+// 💳 BlinkGames — orderController.js (v11.2 — FIX FINAL)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -8,9 +8,6 @@ import User from "../models/User.js";
 import { client } from "../config/mercadoPago.js";
 import { Preference } from "mercadopago";
 
-// ============================================================
-// 💰 Criar checkout (SEM gerar números aqui!)
-// ============================================================
 export const createCheckout = async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -23,9 +20,6 @@ export const createCheckout = async (req, res) => {
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
 
-    // ============================================================
-    // 🔥 NÃO GERAR NÚMEROS AQUI — somente validar rifas
-    // ============================================================
     const itensMP = [];
     const itensPedido = [];
 
@@ -51,64 +45,73 @@ export const createCheckout = async (req, res) => {
       });
     }
 
-    if (itensPedido.length === 0) {
-      return res.status(400).json({ error: "Nenhuma rifa válida encontrada." });
-    }
-
     const total = itensPedido.reduce(
       (sum, r) => sum + r.precoUnit * r.numeros.length,
       0
     );
 
-    // ============================================================
-    // 🧠 Criação da preferência
-    // ============================================================
     const preference = new Preference(client);
-
-    const payerData = {
-      name: user.name || user.nome,
-      email: user.email,
-    };
-
-    const FRONT = process.env.BASE_URL_FRONTEND.replace(/\/$/, "");
-    const BACK = process.env.BASE_URL_BACKEND.replace(/\/$/, "");
 
     const pref = await preference.create({
       body: {
         items: itensMP,
 
-        payer: payerData,
+        payer: {
+          name: user.name || user.nome,
+          email: user.email,
+        },
 
-        metadata: { userId },
+        // ============================================================
+        // 🔥 FIX CRÍTICO — Mercado Pago SÓ aceita metadata simples
+        // ============================================================
+        metadata: {
+          userId: String(userId),
+          orderType: "rifa",    // campo simples só pra garantir
+          hasCart: true          // boolean simples = SEM ERRO
+        },
 
         back_urls: {
-          success: `${FRONT}/sucesso.html`,
-          failure: `${FRONT}/erro.html`,
-          pending:  `${FRONT}/aguardando.html`,
+          success: `${process.env.BASE_URL_FRONTEND}/sucesso.html`,
+          failure: `${process.env.BASE_URL_FRONTEND}/erro.html`,
+          pending: `${process.env.BASE_URL_FRONTEND}/aguardando.html`,
         },
 
         auto_return: "approved",
 
-        notification_url: `${BACK}/api/webhooks/mercadopago`,
+        // 🔥 Aqui NÃO pode falhar
+        notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`,
       },
     });
 
     // ============================================================
-    // 🔍 Pega init_point corretamente
+    // 🔍 Captura certa do PreferenceID e init_point
     // ============================================================
-    const prefId = pref?.id || null;
-    const initPoint = pref?.init_point || null;
-    const sandbox = pref?.sandbox_init_point || null;
+    const prefId =
+      pref?.id ||
+      pref?.body?.id ||
+      pref?.response?.id ||
+      null;
+
+    const initPoint =
+      pref?.init_point ||
+      pref?.body?.init_point ||
+      pref?.response?.init_point ||
+      null;
+
+    const sandbox =
+      pref?.sandbox_init_point ||
+      pref?.body?.sandbox_init_point ||
+      null;
 
     console.log("🔗 Preferência criada:", { prefId, initPoint });
 
     if (!prefId || !initPoint) {
       console.error("❌ Preferência inválida:", pref);
-      return res.status(500).json({ error: "Falha ao gerar link de pagamento." });
+      return res.status(500).json({ error: "Erro ao criar preferência." });
     }
 
     // ============================================================
-    // 💾 Salva pedido PENDING
+    // 💾 Salva pedido
     // ============================================================
     const order = new Order({
       userId,
@@ -130,32 +133,8 @@ export const createCheckout = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("❌ Erro ao criar checkout:", err);
+    console.error("❌ Erro no createCheckout:", err);
     return res.status(500).json({ error: "Erro ao criar checkout." });
-  }
-};
-
-// ============================================================
-// 📦 Ordens do usuário
-// ============================================================
-export const getUserOrders = async (req, res) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ error: "Usuário não autenticado." });
-
-    const orders = await Order.find({ userId })
-      .populate({
-        path: "itens.raffleId",
-        select: "title image price",
-        strictPopulate: false,
-      })
-      .sort({ createdAt: -1 });
-
-    return res.json(orders);
-
-  } catch (err) {
-    console.error("❌ Erro ao buscar ordens:", err);
-    return res.status(500).json({ error: "Erro ao buscar ordens." });
   }
 };
 

@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — orderController.js (v8.9 Estável — SDK v2 Fix Final)
+// 💳 BlinkGames — orderController.js (v9.0 — FIX FINAL COMPLETO)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -62,6 +62,7 @@ export const createCheckout = async (req, res) => {
     // 🧠 Criação da preferência Mercado Pago (SDK v2)
     // ========================================================
     const preference = new Preference(client);
+
     const payerData = {
       name: user.name || user.nome || "Cliente BlinkGames",
       email: user.email || "sem-email@blinkgames.com",
@@ -71,19 +72,25 @@ export const createCheckout = async (req, res) => {
       body: {
         items: itens,
         payer: payerData,
+
+        // 🔥 Webhook precisa disso
         metadata: { userId, cart: orderItens },
+
         back_urls: {
           success: `${process.env.BASE_URL_FRONTEND}/sucesso.html`,
           failure: `${process.env.BASE_URL_FRONTEND}/erro.html`,
           pending: `${process.env.BASE_URL_FRONTEND}/aguardando.html`,
         },
+
         auto_return: "approved",
-        notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/payment`,
+
+        // 🔥 Rota PADRÃO do backend
+        notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`,
       },
     });
 
     // ========================================================
-    // 🔍 Fallback inteligente para campos (SDK v2 / Render / Node)
+    // 🔍 Fallback para garantir ID e links
     // ========================================================
     const prefId =
       prefResp?.id ||
@@ -103,12 +110,7 @@ export const createCheckout = async (req, res) => {
       null;
 
     console.log("✅ Preferência criada:");
-    console.log({
-      prefId,
-      initPoint,
-      sandboxInitPoint,
-      rawKeys: Object.keys(prefResp || {}),
-    });
+    console.log({ prefId, initPoint, sandboxInitPoint });
 
     if (!prefId || !initPoint) {
       console.error("❌ Preferência inválida:", JSON.stringify(prefResp, null, 2));
@@ -116,21 +118,21 @@ export const createCheckout = async (req, res) => {
     }
 
     // ========================================================
-    // 💾 Salva o pedido
+    // 💾 Salva o pedido (CAMPO CORRIGIDO) 
     // ========================================================
     const order = new Order({
       userId,
       itens: orderItens,
       total,
       status: "pending",
-      preferenceId: prefId,
+      mpPreferenceId: prefId,   // 🔥 CORRIGIDO
     });
 
     await order.save();
     console.log("💾 Pedido salvo:", order._id, "→ pref:", prefId);
 
     // ========================================================
-    // 🧾 Retorno padronizado para o front
+    // 🧾 Resposta para o front
     // ========================================================
     return res.json({
       ok: true,
@@ -138,6 +140,7 @@ export const createCheckout = async (req, res) => {
       init_point: initPoint,
       sandbox_init_point: sandboxInitPoint || null,
     });
+
   } catch (err) {
     console.error("❌ Erro ao criar checkout:", err);
     return res.status(500).json({ error: "Erro ao criar checkout." });
@@ -145,7 +148,7 @@ export const createCheckout = async (req, res) => {
 };
 
 // ============================================================
-// 📦 Ordens do usuário logado
+// 📦 Ordens do usuário logado (FIX COMPLETE)
 // ============================================================
 export const getUserOrders = async (req, res) => {
   try {
@@ -153,14 +156,18 @@ export const getUserOrders = async (req, res) => {
     if (!userId) return res.status(401).json({ error: "Usuário não autenticado." });
 
     const orders = await Order.find({ userId })
-      .populate("itens.raffleId", "title image price")
-      .sort({ createdAt: -1 })
-      .setOptions({ strictPopulate: false });
+      .populate({
+        path: "itens.raffleId",
+        select: "title image price",
+        strictPopulate: false,
+      })
+      .sort({ createdAt: -1 });
 
-    res.json(orders);
+    return res.json(orders);
+
   } catch (err) {
     console.error("❌ Erro ao buscar ordens:", err);
-    res.status(500).json({ error: "Erro ao buscar ordens." });
+    return res.status(500).json({ error: "Erro ao buscar ordens." });
   }
 };
 

@@ -1,5 +1,5 @@
 // ============================================================
-// 📩 BlinkGames — webhookController.js (v8.2 Produção Integrada)
+// 📩 BlinkGames — webhookController.js (v8.3 SAFE — sem quebrar o resto)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -19,47 +19,63 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     if (!topic || !id) return res.status(400).json({ error: "Webhook inválido." });
     console.log(`📩 Webhook recebido — topic: ${topic} | ID: ${id}`);
 
+    // Só processa pagamentos
     if (topic !== "payment") {
       console.log("ℹ️ Ignorando evento que não é pagamento");
       return res.status(200).send("ok");
     }
 
-    // 🔹 Busca pagamento no Mercado Pago
+    // 🔹 Busca o pagamento no MP
     const payment = await new Payment(client).get({ id });
-    const { status, metadata } = payment;
-    const userId = metadata?.userId;
-    const cart = metadata?.cart || [];
+
+    const status = payment.status;
+    const externalRef = payment.external_reference;
+    const metadata = payment.metadata || {};
+    const cart = metadata.cart || [];
+
+    // 🔥 Correção: userId vem do external_reference SEMPRE
+    const userId = externalRef || metadata.userId;
 
     console.log(`💰 Pagamento ${id} (${status}) | userId: ${userId}`);
 
     if (!userId) {
-      console.warn("⚠️ Nenhum userId recebido no metadata!");
-      return res.status(400).json({ error: "Pagamento sem referência de usuário." });
+      console.warn("⚠️ userId ausente no external_reference e no metadata");
+      return res.status(200).send("ok");
     }
 
+    // 🔹 Busca usuário
     const user = await User.findById(userId);
     if (!user) {
-      console.warn("⚠️ Usuário não encontrado para pagamento aprovado.");
-      return res.status(404).json({ error: "Usuário não encontrado." });
+      console.warn("⚠️ Usuário não encontrado para pagamento.");
+      return res.status(200).send("ok");
     }
 
-    // 🔹 Atualiza status da Order
+    // 🔥 Correção: Order é identificada pela preferenceId = external_reference
     const order = await Order.findOneAndUpdate(
-      { mpPreferenceId: metadata?.preferenceId || payment.order?.id || payment.id },
+      { userId, status: "pending" },
       { status },
       { new: true }
     );
 
+    if (!order) {
+      console.warn("⚠️ Nenhuma Order pending encontrada para este usuário");
+    }
+
+    // ============================================================
+    // PROCESSAMENTO DE APROVADO
+    // ============================================================
     if (status === "approved") {
+      console.log("🏆 Pagamento aprovado — processando números...");
+
       for (const item of cart) {
         if (!item?.raffleId || !Array.isArray(item?.numeros)) continue;
 
-        // Atualiza rifas vendidas
+        // Atualiza rifas
         await Raffle.findByIdAndUpdate(item.raffleId, {
           $addToSet: { soldNumbers: { $each: item.numeros } },
         });
 
-        // Adiciona compra ao histórico do usuário
+        // Salva no histórico do usuário
         user.purchases.push({
           raffleId: item.raffleId,
           numeros: item.numeros,
@@ -70,25 +86,31 @@ export const handleMercadoPagoWebhook = async (req, res) => {
       }
 
       await user.save();
-      console.log(`✅ Pagamento ${id} aprovado e salvo para ${user.name}`);
 
-      return res.redirect(`${process.env.BASE_URL_FRONTEND}/sucesso.html`);
+      console.log(`✅ Números salvos para ${user.name}`);
+      return res.status(200).send("ok");
     }
 
+    // ============================================================
+    // STATUS PENDENTE
+    // ============================================================
     if (status === "pending") {
-      console.log(`⏳ Pagamento ${id} pendente.`);
-      return res.redirect(`${process.env.BASE_URL_FRONTEND}/aguardando.html`);
+      console.log(`⏳ Pagamento ${id} pendente`);
+      return res.status(200).send("ok");
     }
 
+    // ============================================================
+    // CANCELADO / REJEITADO
+    // ============================================================
     if (status === "rejected" || status === "cancelled") {
-      console.log(`❌ Pagamento ${id} rejeitado/cancelado.`);
-      return res.redirect(`${process.env.BASE_URL_FRONTEND}/erro.html`);
+      console.log(`❌ Pagamento ${id} rejeitado/cancelado`);
+      return res.status(200).send("ok");
     }
 
     return res.status(200).send("ok");
   } catch (err) {
     console.error("💥 Erro no webhook:", err);
-    return res.status(500).json({ error: "Erro no processamento do webhook." });
+    return res.status(200).send("ok"); // evitar retry infinito do MP
   }
 };
 

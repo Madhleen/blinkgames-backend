@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — orderController.js (v10 — Checkout 100% Funcional)
+// 💳 BlinkGames — orderController.js (v11 — Ajuste de URLs)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -38,7 +38,7 @@ export const createCheckout = async (req, res) => {
 
       itensPedido.push({
         raffleId,
-        numeros: item.numeros || item.numbers || [], // já reservados no front
+        numeros: item.numeros || item.numbers || [],
         precoUnit: Number(rifa.price),
         titulo: rifa.title,
       });
@@ -70,26 +70,26 @@ export const createCheckout = async (req, res) => {
       email: user.email,
     };
 
+    const FRONT = process.env.BASE_URL_FRONTEND.replace(/\/$/, "");
+    const BACK = process.env.BASE_URL_BACKEND.replace(/\/$/, "");
+
     const pref = await preference.create({
       body: {
         items: itensMP,
 
         payer: payerData,
 
-        // 🔥 Metadata pequeno (somente o essencial)
-        metadata: {
-          userId,
-        },
+        metadata: { userId },
 
         back_urls: {
-          success: `${process.env.BASE_URL_FRONTEND}/sucesso.html`,
-          failure: `${process.env.BASE_URL_FRONTEND}/erro.html`,
-          pending:  `${process.env.BASE_URL_FRONTEND}/aguardando.html`,
+          success: `${FRONT}/sucesso.html`,
+          failure: `${FRONT}/erro.html`,
+          pending:  `${FRONT}/aguardando.html`,
         },
 
         auto_return: "approved",
 
-        notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`,
+        notification_url: `${BACK}/api/webhooks/mercadopago`,
       },
     });
 
@@ -104,13 +104,11 @@ export const createCheckout = async (req, res) => {
 
     if (!prefId || !initPoint) {
       console.error("❌ Preferência inválida:", pref);
-      return res
-        .status(500)
-        .json({ error: "Falha ao gerar link de pagamento." });
+      return res.status(500).json({ error: "Falha ao gerar link de pagamento." });
     }
 
     // ============================================================
-    // 💾 Salva pedido PENDING (números serão fixados no webhook)
+    // 💾 Salva pedido PENDING
     // ============================================================
     const order = new Order({
       userId,
@@ -130,6 +128,7 @@ export const createCheckout = async (req, res) => {
       init_point: initPoint,
       sandbox_init_point: sandbox,
     });
+
   } catch (err) {
     console.error("❌ Erro ao criar checkout:", err);
     return res.status(500).json({ error: "Erro ao criar checkout." });
@@ -153,6 +152,7 @@ export const getUserOrders = async (req, res) => {
       .sort({ createdAt: -1 });
 
     return res.json(orders);
+
   } catch (err) {
     console.error("❌ Erro ao buscar ordens:", err);
     return res.status(500).json({ error: "Erro ao buscar ordens." });

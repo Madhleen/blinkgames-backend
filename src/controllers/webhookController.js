@@ -1,5 +1,5 @@
 // ============================================================
-// 📩 BlinkGames — webhookController.js (v9.0 — COMPATÍVEL com order v9.0)
+// 📩 BlinkGames — webhookController.js (v10 — Compatível com order v11)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -16,7 +16,10 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     const topic = req.query.topic || req.body.type;
     const id = req.query.id || req.body.data?.id;
 
-    if (!topic || !id) return res.status(400).json({ error: "Webhook inválido." });
+    if (!topic || !id) {
+      return res.status(400).json({ error: "Webhook inválido." });
+    }
+
     console.log(`📩 Webhook recebido — topic: ${topic} | ID: ${id}`);
 
     if (topic !== "payment") {
@@ -30,30 +33,20 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     const payment = await new Payment(client).get({ id });
 
     const status = payment.status;
-    const prefId = payment.preference_id;      // 🔥 chave correta
+    const prefId = payment.preference_id;
     const metadata = payment.metadata || {};
 
-    const userId = metadata.userId;
-    const cart = metadata.cart || [];
+    console.log(
+      `💰 Pagamento ${id} (${status}) | prefId: ${prefId} | metadata.userId: ${metadata.userId}`
+    );
 
-    console.log(`💰 Pagamento ${id} (${status}) | userId: ${userId} | prefId: ${prefId}`);
-
-    if (!userId || !prefId) {
-      console.warn("⚠️ Webhook sem userId OU preference_id!");
+    if (!prefId) {
+      console.warn("⚠️ Webhook sem preference_id!");
       return res.status(200).send("ok");
     }
 
     // ============================================================
-    // 👤 2. BUSCA USUÁRIO
-    // ============================================================
-    const user = await User.findById(userId);
-    if (!user) {
-      console.warn("⚠️ Usuário não encontrado.");
-      return res.status(200).send("ok");
-    }
-
-    // ============================================================
-    // 📦 3. BUSCA ORDER CORRETA
+    // 📦 2. BUSCA ORDER CORRETA E ATUALIZA STATUS
     // ============================================================
     const order = await Order.findOneAndUpdate(
       { mpPreferenceId: prefId },
@@ -68,6 +61,23 @@ export const handleMercadoPagoWebhook = async (req, res) => {
 
     console.log("📦 Order encontrada:", order._id);
 
+    const userId = metadata.userId || order.userId;
+    const cart = order.itens || [];
+
+    if (!userId) {
+      console.warn("⚠️ Order sem userId associado.");
+      return res.status(200).send("ok");
+    }
+
+    // ============================================================
+    // 👤 3. BUSCA USUÁRIO
+    // ============================================================
+    const user = await User.findById(userId);
+    if (!user) {
+      console.warn("⚠️ Usuário não encontrado para userId:", userId);
+      return res.status(200).send("ok");
+    }
+
     // ============================================================
     // 🟢 4. PROCESSAMENTO DE APROVADO
     // ============================================================
@@ -77,12 +87,10 @@ export const handleMercadoPagoWebhook = async (req, res) => {
       for (const item of cart) {
         if (!item?.raffleId || !Array.isArray(item?.numeros)) continue;
 
-        // 👉 Atualiza a rifa
         await Raffle.findByIdAndUpdate(item.raffleId, {
           $addToSet: { soldNumbers: { $each: item.numeros } },
         });
 
-        // 👉 Adiciona no histórico do usuário
         user.purchases.push({
           raffleId: item.raffleId,
           numeros: item.numeros,
@@ -94,7 +102,7 @@ export const handleMercadoPagoWebhook = async (req, res) => {
 
       await user.save();
 
-      console.log(`✅ Números adicionados a ${user.name}`);
+      console.log(`✅ Números adicionados ao usuário ${user.name || user.nome}`);
       return res.status(200).send("ok");
     }
 
@@ -115,7 +123,6 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     }
 
     return res.status(200).send("ok");
-
   } catch (err) {
     console.error("💥 Erro no webhook:", err);
     return res.status(200).send("ok"); // evita reenvio infinito do MP

@@ -1,5 +1,5 @@
 // ============================================================
-// 💫 BlinkGames — server.js (v9.1 FINAL — Webhook FIX + CORS + Segurança)
+// 💫 BlinkGames — server.js (v9.2 FINAL — Webhook FIX + CORS + Segurança)
 // ============================================================
 
 import express from "express";
@@ -91,23 +91,28 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/checkout", checkoutRoutes);
 
 // ============================================================
-// ⚡ Webhook Mercado Pago — ROTA FINAL OFICIAL
+// ⚡ WEBHOOK MERCADO PAGO — FIX DEFINITIVO
 // ============================================================
 //
-// O Mercado Pago envia notificações em:
-// - JSON
-// - x-www-form-urlencoded
-// - text/plain
-// - body vazio com query params
+// O Mercado Pago envia:
+// - /api/webhooks/mercadopago         (normal)
+// - //api/webhooks/mercadopago        (BUG DELES)
+// - JSON, urlencoded, texto, ou vazio
 //
-// ENTÃO precisamos aceitar literalmente tudo.
+// Então precisamos aceitar os DOIS caminhos.
 //
-app.post(
-  "/api/webhooks/mercadopago",
+
+const webhookMiddleware = [
   express.json({ type: "*/*" }),
   express.urlencoded({ extended: true }),
-  handleMercadoPagoWebhook
-);
+  handleMercadoPagoWebhook,
+];
+
+// Caminho correto
+app.post("/api/webhooks/mercadopago", ...webhookMiddleware);
+
+// Caminho duplicado — FIX para Mercado Pago
+app.post("//api/webhooks/mercadopago", ...webhookMiddleware);
 
 // Teste simples
 app.get("/api/webhooks/mercadopago", (_, res) => {

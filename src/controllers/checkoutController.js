@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v14.0 — FINAL REAL)
+// 💳 BlinkGames — checkoutController.js (v15.0 — FINAL CORRIGIDO)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -25,7 +25,6 @@ export const createCheckout = async (req, res) => {
       currency_id: "BRL",
     }));
 
-    // URLs
     const frontendURL =
       process.env.BASE_URL_FRONTEND || "https://blinkgamesrifa.vercel.app";
 
@@ -34,34 +33,28 @@ export const createCheckout = async (req, res) => {
         "https://blinkgames-backend-p4as.onrender.com").replace(/\/+$/, "");
 
     // ============================================================
-    // 🔥 Dados da preferência REAL usados pelo Mercado Pago
+    // 🔥 1) Cria preferência INICIAL (sem external_reference)
     // ============================================================
-    const prefData = {
-      items,
+    const mpRes = await preference.create({
+      body: {
+        items,
 
-      back_urls: {
-        success: `${frontendURL}/sucesso.html`,
-        failure: `${frontendURL}/erro.html`,
-        pending: `${frontendURL}/aguardando.html`,
-      },
+        back_urls: {
+          success: `${frontendURL}/sucesso.html`,
+          failure: `${frontendURL}/erro.html`,
+          pending: `${frontendURL}/aguardando.html`,
+        },
 
-      auto_return: "approved",
-      statement_descriptor: "BLINKGAMES",
-      binary_mode: true,
+        auto_return: "approved",
+        statement_descriptor: "BLINKGAMES",
+        binary_mode: true,
 
-      // 🔥 Fundamental
-      external_reference: String(userId),
+        //  Provisório — será substituído abaixo
+        external_reference: "TEMP",
 
-      // 🔥 Envia apenas o que o webhook realmente usa
-      metadata: {
-        userId: String(userId),
-      },
-
-      notification_url: `${backendURL}/api/webhooks/mercadopago`,
-    };
-
-    // Cria preferência
-    const mpRes = await preference.create({ body: prefData });
+        notification_url: `${backendURL}/api/webhooks/mercadopago`,
+      }
+    });
 
     const preferenceId =
       mpRes?.id ||
@@ -79,19 +72,34 @@ export const createCheckout = async (req, res) => {
       mpRes?.body?.sandbox_init_point ||
       null;
 
-    console.log("💳 MP Preference criada:", {
+    if (!preferenceId || !initPoint)
+      return res.status(500).json({ error: "Falha ao gerar link de pagamento" });
+
+    console.log("💳 Preferência criada:", {
       preferenceId,
       initPoint,
       sandboxInitPoint,
     });
 
-    if (!preferenceId || !initPoint)
-      return res
-        .status(500)
-        .json({ error: "Falha ao gerar link de pagamento" });
+    // ============================================================
+    // 🔥 2) Atualiza a preferência inserindo external_reference REAL
+    // ============================================================
+    await preference.update({
+      id: preferenceId,
+      body: {
+        external_reference: preferenceId,
+        metadata: {
+          userId: String(userId),
+          preferenceId: String(preferenceId),
+          cart
+        }
+      }
+    });
+
+    console.log("🔗 Preferência atualizada com metadata + external_reference");
 
     // ============================================================
-    // 🧾 Salva Order — compatível com webhook + orderController
+    // 🧾 3) Salva Order no banco
     // ============================================================
     const total = cart.reduce(
       (acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 1),
@@ -100,18 +108,22 @@ export const createCheckout = async (req, res) => {
 
     await Order.create({
       userId,
-      mpPreferenceId: preferenceId, // 🔥 CAMPO FINAL E CORRETO
-      cart, // o webhook não usa, mas sua área de pedidos usa
+      mpPreferenceId: preferenceId,
+      cart,
       total,
-      status: "pending",
+      status: "pending"
     });
 
+    // ============================================================
+    // 🎯 4) Retorno FINAL para o frontend
+    // ============================================================
     return res.status(200).json({
       ok: true,
       preference_id: preferenceId,
       init_point: initPoint,
       sandbox_init_point: sandboxInitPoint,
     });
+
   } catch (err) {
     console.error("💥 Erro ao criar checkout:", err);
     return res.status(500).json({

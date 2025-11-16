@@ -1,5 +1,5 @@
 // ============================================================
-// 📩 BlinkGames — webhookController.js (v10 — Compatível com order v11)
+// 📩 BlinkGames — webhookController.js (v11 FINAL — Compatível c/ checkout v15)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -8,9 +8,6 @@ import User from "../models/User.js";
 import { client } from "../config/mercadoPago.js";
 import { Payment } from "mercadopago";
 
-// ============================================================
-// 🔔 Webhook Mercado Pago — Produção
-// ============================================================
 export const handleMercadoPagoWebhook = async (req, res) => {
   try {
     const topic = req.query.topic || req.body.type;
@@ -33,7 +30,7 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     const payment = await new Payment(client).get({ id });
 
     const status = payment.status;
-    const prefId = payment.preference_id;
+    const prefId = payment.preference_id || payment.external_reference;
     const metadata = payment.metadata || {};
 
     console.log(
@@ -46,7 +43,7 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     }
 
     // ============================================================
-    // 📦 2. BUSCA ORDER CORRETA E ATUALIZA STATUS
+    // 📦 2. BUSCA ORDER CORRETA
     // ============================================================
     const order = await Order.findOneAndUpdate(
       { mpPreferenceId: prefId },
@@ -55,46 +52,49 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     );
 
     if (!order) {
-      console.warn("⚠️ Nenhuma Order encontrada para mpPreferenceId:", prefId);
+      console.warn("⚠️ Order não encontrada para:", prefId);
       return res.status(200).send("ok");
     }
 
     console.log("📦 Order encontrada:", order._id);
 
+    // cart correto:
+    const cart = metadata.cart || order.cart || [];
+
     const userId = metadata.userId || order.userId;
-    const cart = order.itens || [];
 
     if (!userId) {
-      console.warn("⚠️ Order sem userId associado.");
+      console.warn("⚠️ Webhook sem userId");
       return res.status(200).send("ok");
     }
 
-    // ============================================================
-    // 👤 3. BUSCA USUÁRIO
-    // ============================================================
     const user = await User.findById(userId);
     if (!user) {
-      console.warn("⚠️ Usuário não encontrado para userId:", userId);
+      console.warn("⚠️ Usuário não encontrado:", userId);
       return res.status(200).send("ok");
     }
 
     // ============================================================
-    // 🟢 4. PROCESSAMENTO DE APROVADO
+    // 🟢 3. PROCESSA APROVADO
     // ============================================================
     if (status === "approved") {
       console.log("🏆 Pagamento aprovado — salvando números...");
 
       for (const item of cart) {
-        if (!item?.raffleId || !Array.isArray(item?.numeros)) continue;
+        const { raffleId, numeros, precoUnit } = item;
 
-        await Raffle.findByIdAndUpdate(item.raffleId, {
-          $addToSet: { soldNumbers: { $each: item.numeros } },
+        if (!raffleId || !Array.isArray(numeros)) continue;
+
+        // salva na rifa
+        await Raffle.findByIdAndUpdate(raffleId, {
+          $addToSet: { soldNumbers: { $each: numeros } }
         });
 
+        // salva no usuário
         user.purchases.push({
-          raffleId: item.raffleId,
-          numeros: item.numeros,
-          precoUnit: item.precoUnit || item.price || 1,
+          raffleId,
+          numeros,
+          precoUnit: precoUnit || item.price || 1,
           paymentId: id,
           date: new Date(),
         });
@@ -102,12 +102,12 @@ export const handleMercadoPagoWebhook = async (req, res) => {
 
       await user.save();
 
-      console.log(`✅ Números adicionados ao usuário ${user.name || user.nome}`);
+      console.log("✅ Números associados com sucesso.");
       return res.status(200).send("ok");
     }
 
     // ============================================================
-    // ⏳ 5. STATUS PENDENTE
+    // ⏳ PENDENTE
     // ============================================================
     if (status === "pending") {
       console.log(`⏳ Pagamento ${id} pendente`);
@@ -115,17 +115,18 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     }
 
     // ============================================================
-    // ❌ 6. STATUS NEGADO/CANCELADO
+    // ❌ NEGADO/CANCELADO
     // ============================================================
-    if (status === "rejected" || status === "cancelled") {
+    if (["rejected", "cancelled"].includes(status)) {
       console.log(`❌ Pagamento ${id} rejeitado/cancelado`);
       return res.status(200).send("ok");
     }
 
     return res.status(200).send("ok");
+
   } catch (err) {
     console.error("💥 Erro no webhook:", err);
-    return res.status(200).send("ok"); // evita reenvio infinito do MP
+    return res.status(200).send("ok");
   }
 };
 

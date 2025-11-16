@@ -1,7 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v12.1 — FINAL)
-// Mercado Pago SDK v2 + compat total com cart.js v10.2
-// Webhook corrigido: /api/webhooks/mercadopago
+// 💳 BlinkGames — checkoutController.js (v13.0 — FIX METADATA)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -19,7 +17,6 @@ export const createCheckout = async (req, res) => {
       return res.status(400).json({ error: "Carrinho vazio." });
     }
 
-    // Normaliza itens para o Mercado Pago
     const items = cart.map((i) => ({
       title: i.title || "Rifa BlinkGames",
       unit_price: Number(i.price) > 0 ? Number(i.price) : 1,
@@ -27,15 +24,13 @@ export const createCheckout = async (req, res) => {
       currency_id: "BRL",
     }));
 
-    // URLs de fallback
     const frontendURL =
       process.env.BASE_URL_FRONTEND || "https://blinkgamesrifa.vercel.app";
 
     const backendURL = (process.env.BASE_URL_BACKEND ||
       "https://blinkgames-backend-p4as.onrender.com")
-      .replace(/\/+$/, ""); // 🔥 remove barras sobrando
+      .replace(/\/+$/, "");
 
-    // Dados da preferência
     const prefData = {
       items,
       back_urls: {
@@ -47,35 +42,26 @@ export const createCheckout = async (req, res) => {
       statement_descriptor: "BLINKGAMES",
       binary_mode: true,
 
-      // 🔗 Amarra a ordem ao userId
       external_reference: String(userId),
 
-      // Metadata salva tudo
-      metadata: { userId: String(userId), cart },
+      // 🔥 CORREÇÃO: metadata SIMPLES
+      metadata: {
+        userId: String(userId),
+      },
 
-      // 🔥 Agora na rota correta
       notification_url: `${backendURL}/api/webhooks/mercadopago`,
     };
 
-    // Criar preferência (SDK v2)
     const mpRes = await preference.create({ body: prefData });
 
-    // Formatos possíveis da resposta
     const preferenceId =
-      mpRes?.id ||
-      mpRes?.body?.id ||
-      mpRes?.body?.preference_id ||
-      null;
+      mpRes?.id || mpRes?.body?.id || mpRes?.body?.preference_id || null;
 
     const initPoint =
-      mpRes?.init_point ||
-      mpRes?.body?.init_point ||
-      null;
+      mpRes?.init_point || mpRes?.body?.init_point || null;
 
     const sandboxInitPoint =
-      mpRes?.sandbox_init_point ||
-      mpRes?.body?.sandbox_init_point ||
-      null;
+      mpRes?.sandbox_init_point || mpRes?.body?.sandbox_init_point || null;
 
     console.log("💳 MP Preference criada:", {
       preferenceId,
@@ -84,13 +70,9 @@ export const createCheckout = async (req, res) => {
     });
 
     if (!preferenceId || !initPoint) {
-      console.error("❌ Resposta inesperada:", mpRes);
-      return res
-        .status(500)
-        .json({ error: "Falha ao gerar link de pagamento" });
+      return res.status(500).json({ error: "Falha ao gerar link de pagamento" });
     }
 
-    // Salva Order
     const total = cart.reduce(
       (acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 1),
       0
@@ -104,9 +86,6 @@ export const createCheckout = async (req, res) => {
       status: "pending",
     });
 
-    // ============================================================
-    // 🔥 RESPOSTA FINAL — EXATAMENTE O QUE O FRONT ESPERA
-    // ============================================================
     return res.status(200).json({
       ok: true,
       preference_id: preferenceId,

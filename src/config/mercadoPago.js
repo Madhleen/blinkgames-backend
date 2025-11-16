@@ -1,17 +1,25 @@
 // ============================================================
-// 💳 BlinkGames — config/mercadoPago.js (v7.1 — Produção Final)
+// 💳 BlinkGames — config/mercadoPago.js (v7.2 — Produção Final CORRETA)
 // ============================================================
 
-import { MercadoPagoConfig, Preference } from "mercadopago";
+import { MercadoPagoConfig } from "mercadopago";
 import dotenv from "dotenv";
 dotenv.config();
 
-// ✅ Cliente configurado para PRODUÇÃO
+// ============================================================
+// 🔥 Cliente Mercado Pago — SDK v2
+// ============================================================
+//
+// ❗ IMPORTANTE:
+// NÃO criar Preference aqui!
+// Ela deve ser criada dentro do orderController
+// usando: new Preference(client)
+//
+// Se exportar Preference fixa, quebra o checkout!
+// ============================================================
+
 export const client = new MercadoPagoConfig({
   accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN,
-  options: { sandbox: false }, // 🚀 produção real
+  options: { sandbox: false }, // produção real
 });
-
-// ✅ Exporta instância de Preference (necessária no checkoutController)
-export const preference = new Preference(client);
 

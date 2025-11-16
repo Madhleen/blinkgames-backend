@@ -1,16 +1,15 @@
 // ============================================================
-// 💳 BlinkGames — orderController.js (v9.0 — FIX FINAL COMPLETO)
+// 💳 BlinkGames — orderController.js (v10 — Checkout 100% Funcional)
 // ============================================================
 
 import Order from "../models/Order.js";
 import Raffle from "../models/Raffle.js";
 import User from "../models/User.js";
-import { gerarNumerosUnicos } from "../utils/numberGenerator.js";
 import { client } from "../config/mercadoPago.js";
 import { Preference } from "mercadopago";
 
 // ============================================================
-// 💰 Criar ordem e preference no Mercado Pago
+// 💰 Criar checkout (SEM gerar números aqui!)
 // ============================================================
 export const createCheckout = async (req, res) => {
   try {
@@ -24,123 +23,113 @@ export const createCheckout = async (req, res) => {
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
 
-    const itens = [];
-    const orderItens = [];
+    // ============================================================
+    // 🔥 NÃO GERAR NÚMEROS AQUI — somente validar rifas
+    // ============================================================
+    const itensMP = [];
+    const itensPedido = [];
 
-    // 🔹 Gera itens e números de rifa
     for (const item of cart) {
       const raffleId = item.raffleId || item.id || item._id;
-      const qtd = Math.max(1, Number(item.qtd || item.quantity || 1));
+      const quantidade = Number(item.quantity) || 1;
 
       const rifa = await Raffle.findById(raffleId);
       if (!rifa) continue;
 
-      const numeros = gerarNumerosUnicos(qtd, rifa.totalNumbers, rifa.soldNumbers);
-
-      orderItens.push({
-        raffleId: rifa._id,
-        numeros,
+      itensPedido.push({
+        raffleId,
+        numeros: item.numeros || item.numbers || [], // já reservados no front
         precoUnit: Number(rifa.price),
         titulo: rifa.title,
       });
 
-      itens.push({
+      itensMP.push({
         title: rifa.title,
-        quantity: qtd,
+        quantity: quantidade,
         unit_price: Number(rifa.price),
         currency_id: "BRL",
       });
     }
 
-    if (orderItens.length === 0) {
+    if (itensPedido.length === 0) {
       return res.status(400).json({ error: "Nenhuma rifa válida encontrada." });
     }
 
-    const total = orderItens.reduce((sum, i) => sum + i.precoUnit * i.numeros.length, 0);
+    const total = itensPedido.reduce(
+      (sum, r) => sum + r.precoUnit * r.numeros.length,
+      0
+    );
 
-    // ========================================================
-    // 🧠 Criação da preferência Mercado Pago (SDK v2)
-    // ========================================================
+    // ============================================================
+    // 🧠 Criação da preferência
+    // ============================================================
     const preference = new Preference(client);
 
     const payerData = {
-      name: user.name || user.nome || "Cliente BlinkGames",
-      email: user.email || "sem-email@blinkgames.com",
+      name: user.name || user.nome,
+      email: user.email,
     };
 
-    const prefResp = await preference.create({
+    const pref = await preference.create({
       body: {
-        items: itens,
+        items: itensMP,
+
         payer: payerData,
 
-        // 🔥 Webhook precisa disso
-        metadata: { userId, cart: orderItens },
+        // 🔥 Metadata pequeno (somente o essencial)
+        metadata: {
+          userId,
+        },
 
         back_urls: {
           success: `${process.env.BASE_URL_FRONTEND}/sucesso.html`,
           failure: `${process.env.BASE_URL_FRONTEND}/erro.html`,
-          pending: `${process.env.BASE_URL_FRONTEND}/aguardando.html`,
+          pending:  `${process.env.BASE_URL_FRONTEND}/aguardando.html`,
         },
 
         auto_return: "approved",
 
-        // 🔥 Rota PADRÃO do backend
         notification_url: `${process.env.BASE_URL_BACKEND}/api/webhooks/mercadopago`,
       },
     });
 
-    // ========================================================
-    // 🔍 Fallback para garantir ID e links
-    // ========================================================
-    const prefId =
-      prefResp?.id ||
-      prefResp?.body?.id ||
-      prefResp?.response?.id ||
-      null;
+    // ============================================================
+    // 🔍 Pega init_point corretamente
+    // ============================================================
+    const prefId = pref?.id || null;
+    const initPoint = pref?.init_point || null;
+    const sandbox = pref?.sandbox_init_point || null;
 
-    const initPoint =
-      prefResp?.init_point ||
-      prefResp?.body?.init_point ||
-      prefResp?.response?.init_point ||
-      null;
-
-    const sandboxInitPoint =
-      prefResp?.sandbox_init_point ||
-      prefResp?.body?.sandbox_init_point ||
-      null;
-
-    console.log("✅ Preferência criada:");
-    console.log({ prefId, initPoint, sandboxInitPoint });
+    console.log("🔗 Preferência criada:", { prefId, initPoint });
 
     if (!prefId || !initPoint) {
-      console.error("❌ Preferência inválida:", JSON.stringify(prefResp, null, 2));
-      return res.status(500).json({ error: "Erro ao criar preferência no Mercado Pago." });
+      console.error("❌ Preferência inválida:", pref);
+      return res
+        .status(500)
+        .json({ error: "Falha ao gerar link de pagamento." });
     }
 
-    // ========================================================
-    // 💾 Salva o pedido (CAMPO CORRIGIDO) 
-    // ========================================================
+    // ============================================================
+    // 💾 Salva pedido PENDING (números serão fixados no webhook)
+    // ============================================================
     const order = new Order({
       userId,
-      itens: orderItens,
+      itens: itensPedido,
       total,
       status: "pending",
-      mpPreferenceId: prefId,   // 🔥 CORRIGIDO
+      mpPreferenceId: prefId,
     });
 
     await order.save();
-    console.log("💾 Pedido salvo:", order._id, "→ pref:", prefId);
 
-    // ========================================================
-    // 🧾 Resposta para o front
-    // ========================================================
+    console.log("💾 Pedido criado:", order._id);
+
     return res.json({
       ok: true,
       preference_id: prefId,
       init_point: initPoint,
-      sandbox_init_point: sandboxInitPoint || null,
+      sandbox_init_point: sandbox,
     });
-
   } catch (err) {
     console.error("❌ Erro ao criar checkout:", err);
     return res.status(500).json({ error: "Erro ao criar checkout." });
@@ -148,7 +137,7 @@ export const createCheckout = async (req, res) => {
 };
 
 // ============================================================
-// 📦 Ordens do usuário logado (FIX COMPLETE)
+// 📦 Ordens do usuário
 // ============================================================
 export const getUserOrders = async (req, res) => {
   try {
@@ -164,7 +153,6 @@ export const getUserOrders = async (req, res) => {
       .sort({ createdAt: -1 });
 
     return res.json(orders);
-
   } catch (err) {
     console.error("❌ Erro ao buscar ordens:", err);
     return res.status(500).json({ error: "Erro ao buscar ordens." });

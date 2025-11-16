@@ -1,6 +1,7 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v12.0 — FINAL)
+// 💳 BlinkGames — checkoutController.js (v12.1 — FINAL)
 // Mercado Pago SDK v2 + compat total com cart.js v10.2
+// Webhook corrigido: /api/webhooks/mercadopago
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -29,9 +30,10 @@ export const createCheckout = async (req, res) => {
     // URLs de fallback
     const frontendURL =
       process.env.BASE_URL_FRONTEND || "https://blinkgamesrifa.vercel.app";
-    const backendURL =
-      process.env.BASE_URL_BACKEND ||
-      "https://blinkgames-backend-p4as.onrender.com";
+
+    const backendURL = (process.env.BASE_URL_BACKEND ||
+      "https://blinkgames-backend-p4as.onrender.com")
+      .replace(/\/+$/, ""); // 🔥 remove barras sobrando
 
     // Dados da preferência
     const prefData = {
@@ -51,8 +53,8 @@ export const createCheckout = async (req, res) => {
       // Metadata salva tudo
       metadata: { userId: String(userId), cart },
 
-      // 🔥 sua rota REAL de webhook
-      notification_url: `${backendURL}/api/webhooks/payment`,
+      // 🔥 Agora na rota correta
+      notification_url: `${backendURL}/api/webhooks/mercadopago`,
     };
 
     // Criar preferência (SDK v2)

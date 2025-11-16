@@ -1,5 +1,5 @@
 // ============================================================
-// 📬 BlinkGames — routes/webhookRoutes.js (v8.1 Produção Segura e Compatível MP)
+// 📬 BlinkGames — routes/webhookRoutes.js (v9.0 — FIX DEFINITIVO MP)
 // ============================================================
 
 import express from "express";
@@ -10,11 +10,12 @@ const router = express.Router();
 // ============================================================
 // 🔔 Webhook Mercado Pago → BlinkGames
 // ============================================================
-// ⚠️ Importante: o Mercado Pago envia requisições sem cabeçalho JSON padrão.
-// Precisamos garantir que o Express aceite tanto JSON quanto URL-encoded.
+// Aceita QUALQUER tipo de payload que o Mercado Pago mandar.
+// Isso evita 404 e garante que o controller sempre será executado.
 router.post(
   "/mercadopago",
-  express.json({ type: ["application/json", "text/plain"] }),
+  express.json({ type: "*/*" }),
+  express.urlencoded({ extended: true }),
   handleMercadoPagoWebhook
 );
 

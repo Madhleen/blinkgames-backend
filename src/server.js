@@ -1,5 +1,5 @@
 // ============================================================
-// 💫 BlinkGames — server.js (v8.0 Produção Final Corrigido CORS + Segurança)
+// 💫 BlinkGames — server.js (v9.1 FINAL — Webhook FIX + CORS + Segurança)
 // ============================================================
 
 import express from "express";
@@ -91,15 +91,27 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/checkout", checkoutRoutes);
 
 // ============================================================
-// ⚡ Webhook Mercado Pago
+// ⚡ Webhook Mercado Pago — ROTA FINAL OFICIAL
 // ============================================================
-[
-  "/api/webhooks/payment",
-  "/ipn/webhooks/payment",
-  "/ipn/webhooks/mercadopago",
-].forEach((path) => {
-  app.post(path, handleMercadoPagoWebhook);
-  app.get(path, (_, res) => res.status(200).send("OK"));
+//
+// O Mercado Pago envia notificações em:
+// - JSON
+// - x-www-form-urlencoded
+// - text/plain
+// - body vazio com query params
+//
+// ENTÃO precisamos aceitar literalmente tudo.
+//
+app.post(
+  "/api/webhooks/mercadopago",
+  express.json({ type: "*/*" }),
+  express.urlencoded({ extended: true }),
+  handleMercadoPagoWebhook
+);
+
+// Teste simples
+app.get("/api/webhooks/mercadopago", (_, res) => {
+  res.status(200).send("OK");
 });
 
 // ============================================================
@@ -115,7 +127,9 @@ app.get("/", (_, res) => {
 app.use((err, req, res, next) => {
   if (err.message === "CORS não permitido") {
     console.error(`🚫 Rejeitado CORS: ${req.headers.origin}`);
-    return res.status(403).json({ error: "CORS não permitido para esta origem." });
+    return res
+      .status(403)
+      .json({ error: "CORS não permitido para esta origem." });
   }
   next(err);
 });
@@ -126,5 +140,7 @@ app.use(errorHandler);
 // 🔥 Inicialização do servidor
 // ============================================================
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`🚀 Servidor ativo na porta ${PORT}`));
+app.listen(PORT, () =>
+  console.log(`🚀 Servidor ativo na porta ${PORT}`)
+);
 

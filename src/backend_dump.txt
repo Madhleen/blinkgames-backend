@@ -1,0 +1,1397 @@
+// ============================================================
+// 💫 BlinkGames — server.js (v10 FINAL — Checkout/Webhook Fix + CORS)
+// ============================================================
+
+import express from "express";
+import helmet from "helmet";
+import morgan from "morgan";
+import dotenv from "dotenv";
+import cors from "cors";
+import connectDB from "./config/db.js";
+import { errorHandler } from "./middleware/errorHandler.js";
+
+// Rotas
+import authRoutes from "./routes/authRoutes.js";
+import raffleRoutes from "./routes/raffleRoutes.js";
+import orderRoutes from "./routes/orderRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
+import checkoutRoutes from "./routes/checkoutRoutes.js";
+import webhookRoutes from "./routes/webhookRoutes.js";
+
+dotenv.config();
+const app = express();
+
+// ============================================================
+// 🔧 Middlewares base
+// ============================================================
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ extended: true }));
+
+// ============================================================
+// 🌐 CORS — apenas domínios válidos
+// ============================================================
+const allowedOrigins = [
+  "https://blinkgamesrifa.vercel.app",
+  "https://blinkgames-frontend.vercel.app",
+  "http://localhost:5173",
+];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin) || /\.vercel\.app$/.test(origin)) {
+        return callback(null, true);
+      }
+      console.warn("🚫 CORS bloqueado para:", origin);
+      return callback(new Error("CORS não permitido"));
+    },
+    credentials: true,
+  })
+);
+
+// Segurança + logs
+app.use(helmet());
+app.use(morgan("dev"));
+
+// ============================================================
+// 💾 Banco de dados
+// ============================================================
+connectDB();
+
+// ============================================================
+// 🔔 Webhook (carregado ANTES das rotas normais)
+// ============================================================
+app.use("/api/webhooks", webhookRoutes);
+
+// ============================================================
+// 🚀 Rotas principais
+// ============================================================
+app.use("/api/auth", authRoutes);
+app.use("/api/raffles", raffleRoutes);
+app.use("/api/orders", orderRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/checkout", checkoutRoutes);
+
+// ============================================================
+// 🏁 Rota padrão
+// ============================================================
+app.get("/", (_, res) => {
+  res.json({ message: "🚀 BlinkGames backend ativo!" });
+});
+
+// ============================================================
+// ⚠️ Middleware global de erros
+// ============================================================
+app.use((err, req, res, next) => {
+  if (err.message === "CORS não permitido") {
+    return res.status(403).json({
+      error: "CORS bloqueado para esta origem.",
+    });
+  }
+  next(err);
+});
+
+app.use(errorHandler);
+
+// ============================================================
+// 🚀 Inicialização
+// ============================================================
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
+
+import User from "../models/User.js";
+import Order from "../models/Order.js";
+import Raffle from "../models/Raffle.js";
+
+// 🔹 Dashboard geral (totais e métricas)
+export const getDashboard = async (req, res) => {
+  try {
+    const totalUsuarios = await User.countDocuments();
+    const totalRifas = await Raffle.countDocuments({ ativo: true });
+    const totalPagamentos = await Order.countDocuments({ status: "approved" });
+    const receita = await Order.aggregate([
+      { $match: { status: "approved" } },
+      { $group: { _id: null, total: { $sum: "$total" } } },
+    ]);
+
+    res.json({
+      totalUsuarios,
+      totalRifas,
+      totalPagamentos,
+      receita: receita[0]?.total || 0,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erro ao carregar dashboard." });
+  }
+};
+
+// 🔹 Listar usuários
+export const listUsers = async (req, res) => {
+  try {
+    const users = await User.find().select("-senhaHash -resetToken -resetTokenExp");
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao buscar usuários." });
+  }
+};
+
+// 🔹 Listar rifas
+export const listRaffles = async (req, res) => {
+  try {
+    const rifas = await Raffle.find().sort({ createdAt: -1 });
+    res.json(rifas);
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao buscar rifas." });
+  }
+};
+
+// 🔹 Listar pagamentos
+export const listPayments = async (req, res) => {
+  try {
+    const pagamentos = await Order.find()
+      .populate("userId", "nome email cpf")
+      .populate("itens.raffleId", "titulo preco")
+      .sort({ createdAt: -1 });
+    res.json(pagamentos);
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao buscar pagamentos." });
+  }
+};
+
+// 🔹 Exportar CSV (usuários, rifas, pagamentos)
+export const exportCSV = async (req, res) => {
+  try {
+    const tipo = req.query.tipo;
+
+    let dados = [];
+    if (tipo === "users") {
+      dados = await User.find().select("nome email cpf telefone createdAt");
+    } else if (tipo === "raffles") {
+      dados = await Raffle.find().select("titulo preco ativo dataSorteio createdAt");
+    } else if (tipo === "orders") {
+      dados = await Order.find()
+        .populate("userId", "nome email")
+        .select("status total createdAt");
+    } else {
+      return res.status(400).json({ error: "Tipo inválido para exportação." });
+    }
+
+    const csv = [
+      Object.keys(dados[0].toObject()).join(","),
+      ...dados.map((d) => Object.values(d.toObject()).join(",")),
+    ].join("\n");
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename=${tipo}.csv`);
+    res.send(csv);
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao exportar CSV." });
+  }
+};
+// ============================================================
+// 🔐 BlinkGames — controllers/authController.js (v8.0 Produção Corrigido)
+// ============================================================
+
+import User from "../models/User.js";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+
+// ============================================================
+// 🔹 Gera token JWT
+// ============================================================
+const gerarToken = (user) => {
+  return jwt.sign(
+    { id: user._id, email: user.email, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
+};
+
+// ============================================================
+// 🧍‍♀️ Registro de novo usuário
+// ============================================================
+export const registerUser = async (req, res) => {
+  try {
+    const { nome, email, password, cpf } = req.body;
+
+    if (!nome || !email || !password) {
+      return res.status(400).json({ error: "Preencha todos os campos." });
+    }
+
+    const usuarioExistente = await User.findOne({ email });
+    if (usuarioExistente) {
+      return res.status(400).json({ error: "E-mail já cadastrado." });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const senhaHash = await bcrypt.hash(password, salt);
+
+    const novoUsuario = await User.create({
+      name: nome,
+      email,
+      cpf,
+      password: senhaHash,
+      role: "user",
+    });
+
+    const token = gerarToken(novoUsuario);
+
+    res.status(201).json({
+      message: "Usuário registrado com sucesso!",
+      user: {
+        id: novoUsuario._id,
+        nome: novoUsuario.name,
+        email: novoUsuario.email,
+      },
+      token,
+    });
+  } catch (err) {
+    console.error("❌ Erro ao registrar usuário:", err);
+    res.status(500).json({ error: "Erro interno ao registrar usuário." });
+  }
+};
+
+// ============================================================
+// 🔑 Login do usuário
+// ============================================================
+export const loginUser = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: "Preencha todos os campos." });
+    }
+
+    const usuario = await User.findOne({ email }).select("+password");
+    if (!usuario) {
+      return res.status(404).json({ error: "Usuário não encontrado." });
+    }
+
+    const senhaValida = await bcrypt.compare(password, usuario.password);
+    if (!senhaValida) {
+      return res.status(401).json({ error: "Senha incorreta." });
+    }
+
+    const token = gerarToken(usuario);
+
+    res.json({
+      message: "Login realizado com sucesso!",
+      user: {
+        id: usuario._id,
+        nome: usuario.name,
+        email: usuario.email,
+        role: usuario.role,
+      },
+      token,
+    });
+  } catch (err) {
+    console.error("❌ Erro no login:", err);
+    res.status(500).json({ error: "Erro interno no login." });
+  }
+};
+
+// ============================================================
+// 👤 Perfil do usuário logado
+// ============================================================
+export const getProfile = async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: "Usuário não autenticado." });
+    }
+
+    const foundUser = await User.findById(user.id).select("-password");
+    if (!foundUser) {
+      return res.status(404).json({ error: "Usuário não encontrado." });
+    }
+
+    res.json(foundUser);
+  } catch (err) {
+    console.error("❌ Erro ao obter perfil:", err);
+    res.status(500).json({ error: "Erro ao obter perfil do usuário." });
+  }
+};
+
+// ============================================================
+// 🚪 Logout (simbólico — controlado no front)
+// ============================================================
+export const logoutUser = async (req, res) => {
+  try {
+    res.json({ message: "Logout realizado com sucesso!" });
+  } catch (err) {
+    console.error("❌ Erro no logout:", err);
+    res.status(500).json({ error: "Erro ao sair da conta." });
+  }
+};
+
+// ============================================================
+// 💳 BlinkGames — checkoutController.js (v15.1 — FIX 2025)
+// ============================================================
+
+import Order from "../models/Order.js";
+import { Preference } from "mercadopago";
+import { client } from "../config/mercadoPago.js";
+
+export const createCheckout = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId)
+      return res.status(401).json({ error: "Usuário não autenticado." });
+
+    const { cart } = req.body;
+    if (!Array.isArray(cart) || cart.length === 0)
+      return res.status(400).json({ error: "Carrinho vazio." });
+
+    // ============================================================
+    // 🔹 Normaliza itens do MP
+    // ============================================================
+    const items = cart.map((i) => ({
+      title: i.title || "Rifa BlinkGames",
+      unit_price: Number(i.price) || 1,
+      quantity: Number(i.quantity) || 1,
+      currency_id: "BRL",
+    }));
+
+    const frontendURL =
+      process.env.BASE_URL_FRONTEND || "https://blinkgamesrifa.vercel.app";
+
+    const backendURL =
+      (process.env.BASE_URL_BACKEND ||
+        "https://blinkgames-backend-p4as.onrender.com").replace(/\/+$/, "");
+
+    // ============================================================
+    // 🔥 1) Cria preferência INICIAL
+    // ============================================================
+    const preference = new Preference(client);
+
+    const pref = await preference.create({
+      body: {
+        items,
+
+        back_urls: {
+          success: `${frontendURL}/sucesso.html`,
+          failure: `${frontendURL}/erro.html`,
+          pending: `${frontendURL}/aguardando.html`,
+        },
+
+        auto_return: "approved",
+        binary_mode: true,
+        statement_descriptor: "BLINKGAMES",
+
+        external_reference: "TEMP",
+
+        notification_url: `${backendURL}/api/webhooks/mercadopago`,
+      },
+    });
+
+    const preferenceId =
+      pref?.id ||
+      pref?.body?.id ||
+      pref?.response?.id ||
+      null;
+
+    const initPoint =
+      pref?.init_point ||
+      pref?.body?.init_point ||
+      pref?.response?.init_point ||
+      null;
+
+    const sandboxInitPoint =
+      pref?.sandbox_init_point ||
+      pref?.body?.sandbox_init_point ||
+      pref?.response?.sandbox_init_point ||
+      null;
+
+    if (!preferenceId) {
+      return res.status(500).json({ error: "Falha ao gerar preferência." });
+    }
+
+    console.log("💳 Preferência criada:", {
+      preferenceId,
+      initPoint,
+      sandboxInitPoint,
+    });
+
+    // ============================================================
+    // 🔥 2) Adiciona metadata REAL no Mercado Pago
+    // ============================================================
+    await preference.update({
+      id: preferenceId,
+      body: {
+        external_reference: preferenceId,
+        metadata: {
+          userId: String(userId),
+          preferenceId: String(preferenceId),
+          cart, // 🔥 cart completo → usado no webhook
+        },
+      },
+    });
+
+    console.log("🔗 Preferência atualizada com metadata + external_reference");
+
+    // ============================================================
+    // 🧾 3) Salva Order no banco
+    // ============================================================
+    const total = cart.reduce(
+      (acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 1),
+      0
+    );
+
+    await Order.create({
+      userId,
+      mpPreferenceId: preferenceId,
+      cart,
+      total,
+      status: "pending",
+    });
+
+    console.log("💾 Order salva com sucesso:", preferenceId);
+
+    // ============================================================
+    // 🎯 4) Resposta final
+    // ============================================================
+    return res.status(200).json({
+      ok: true,
+      preference_id: preferenceId,
+      init_point: initPoint,
+      sandbox_init_point: sandboxInitPoint,
+    });
+  } catch (err) {
+    console.error("💥 Erro no createCheckout:", err);
+    return res.status(500).json({
+      error: err?.response?.data?.message || err?.message,
+    });
+  }
+};
+
+// ============================================================
+// 📦 BlinkGames — orderController.js (v12 — LIMPO E CORRIGIDO)
+// ============================================================
+//
+// ❗ IMPORTANTE:
+// ESTE ARQUIVO NÃO CONTÉM MAIS createCheckout.
+// O createCheckout oficial está em controllers/checkoutController.js
+//
+// Este arquivo agora só cuida das ORDENS DO USUÁRIO.
+// ============================================================
+
+import Order from "../models/Order.js";
+
+// ============================================================
+// 📦 Ordens do usuário (GET /api/orders/my)
+// ============================================================
+export const getUserOrders = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Usuário não autenticado." });
+    }
+
+    const orders = await Order.find({ userId })
+      .populate({
+        path: "itens.raffleId",
+        select: "title image price",
+        strictPopulate: false,
+      })
+      .sort({ createdAt: -1 });
+
+    return res.json(orders);
+
+  } catch (err) {
+    console.error("❌ Erro ao buscar ordens:", err);
+    return res.status(500).json({ error: "Erro ao buscar ordens." });
+  }
+};
+
+// ============================================================
+// 🎟️ BlinkGames — raffleController.js (v8.3 Produção Sincronizada com Pagamentos)
+// ============================================================
+
+import Raffle from "../models/Raffle.js";
+import { gerarNumerosUnicos } from "../utils/numberGenerator.js";
+
+// ============================================================
+// 🔹 Listar rifas ativas
+// ============================================================
+export const getRaffles = async (req, res) => {
+  try {
+    const rifas = await Raffle.find({ active: true });
+    const ordenadas = rifas.sort((a, b) => {
+      const aTitle = (a.title || a.titulo || "").toLowerCase();
+      const bTitle = (b.title || b.titulo || "").toLowerCase();
+      if (aTitle.includes("ps5")) return -1;
+      if (bTitle.includes("ps5")) return 1;
+      return 0;
+    });
+    res.json(ordenadas);
+  } catch (err) {
+    console.error("❌ Erro ao buscar rifas:", err);
+    res.status(500).json({ error: "Erro ao buscar rifas." });
+  }
+};
+
+// ============================================================
+// 🔹 Detalhar uma rifa
+// ============================================================
+export const getRaffleById = async (req, res) => {
+  try {
+    const rifa = await Raffle.findById(req.params.id);
+    if (!rifa) return res.status(404).json({ error: "Rifa não encontrada." });
+    res.json(rifa);
+  } catch (err) {
+    console.error("❌ Erro ao buscar rifa:", err);
+    res.status(500).json({ error: "Erro ao buscar rifa." });
+  }
+};
+
+// ============================================================
+// 🔹 Criar nova rifa
+// ============================================================
+export const createRaffle = async (req, res) => {
+  try {
+    const {
+      titulo,
+      descricao,
+      imagem,
+      preco,
+      maxNumeros,
+      dataSorteio,
+      title,
+      description,
+      image,
+      price,
+      totalNumbers,
+      drawDate,
+      ativo,
+    } = req.body;
+
+    const novaRifa = new Raffle({
+      title: title || titulo,
+      description: description || descricao,
+      image: image || imagem,
+      price: price || preco,
+      totalNumbers: totalNumbers || maxNumeros,
+      drawDate: drawDate || dataSorteio,
+      active: ativo ?? true,
+      soldNumbers: [],
+    });
+
+    await novaRifa.save();
+    res.status(201).json(novaRifa);
+  } catch (err) {
+    console.error("❌ Erro ao criar rifa:", err);
+    res.status(500).json({ error: "Erro ao criar rifa." });
+  }
+};
+
+// ============================================================
+// 🔹 Atualizar rifa
+// ============================================================
+export const updateRaffle = async (req, res) => {
+  try {
+    const updated = await Raffle.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+    });
+    if (!updated) return res.status(404).json({ error: "Rifa não encontrada." });
+    res.json(updated);
+  } catch (err) {
+    console.error("❌ Erro ao atualizar rifa:", err);
+    res.status(500).json({ error: "Erro ao atualizar rifa." });
+  }
+};
+
+// ============================================================
+// 🔹 Desativar rifa
+// ============================================================
+export const deactivateRaffle = async (req, res) => {
+  try {
+    const updated = await Raffle.findByIdAndUpdate(
+      req.params.id,
+      { active: false },
+      { new: true }
+    );
+    if (!updated) return res.status(404).json({ error: "Rifa não encontrada." });
+    res.json({ message: "Rifa desativada com sucesso!" });
+  } catch (err) {
+    console.error("❌ Erro ao desativar rifa:", err);
+    res.status(500).json({ error: "Erro ao desativar rifa." });
+  }
+};
+
+// ============================================================
+// 🔹 Gerar números disponíveis (pré-reserva)
+// ============================================================
+export const generateNumbers = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { quantidade } = req.body;
+    const rifa = await Raffle.findById(id);
+    if (!rifa) return res.status(404).json({ error: "Rifa não encontrada." });
+
+    const numerosGerados = gerarNumerosUnicos(
+      quantidade,
+      rifa.totalNumbers,
+      rifa.soldNumbers
+    );
+
+    res.json({ numeros: numerosGerados });
+  } catch (err) {
+    console.error("❌ Erro ao gerar números:", err);
+    res.status(500).json({ error: "Erro ao gerar números." });
+  }
+};
+
+// ============================================================
+// 🔹 Reservar números (sem gravar venda definitiva)
+// ============================================================
+export const reserveNumbers = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { numeros } = req.body;
+
+    if (!numeros || !Array.isArray(numeros) || numeros.length === 0) {
+      return res.status(400).json({ error: "Nenhum número informado para reserva." });
+    }
+
+    const rifa = await Raffle.findById(id);
+    if (!rifa) return res.status(404).json({ error: "Rifa não encontrada." });
+
+    const reservados = new Set(rifa.soldNumbers || []);
+    const disponiveis = numeros.filter((n) => !reservados.has(n));
+
+    if (disponiveis.length !== numeros.length) {
+      return res.status(400).json({ error: "Alguns números já foram reservados/vendidos." });
+    }
+
+    // Não salva no banco (reserva temporária)
+    return res.json({
+      message: "Números disponíveis e reservados temporariamente.",
+      numeros: disponiveis,
+    });
+  } catch (err) {
+    console.error("💥 Erro ao reservar números:", err);
+    res.status(500).json({ error: "Erro ao reservar números." });
+  }
+};
+
+// ============================================================
+// 📩 BlinkGames — webhookController.js (v11 FINAL — Compatível c/ checkout v15)
+// ============================================================
+
+import Order from "../models/Order.js";
+import Raffle from "../models/Raffle.js";
+import User from "../models/User.js";
+import { client } from "../config/mercadoPago.js";
+import { Payment } from "mercadopago";
+
+export const handleMercadoPagoWebhook = async (req, res) => {
+  try {
+    const topic = req.query.topic || req.body.type;
+    const id = req.query.id || req.body.data?.id;
+
+    if (!topic || !id) {
+      return res.status(400).json({ error: "Webhook inválido." });
+    }
+
+    console.log(`📩 Webhook recebido — topic: ${topic} | ID: ${id}`);
+
+    if (topic !== "payment") {
+      console.log("ℹ️ Ignorando evento que não é pagamento");
+      return res.status(200).send("ok");
+    }
+
+    // ============================================================
+    // 🧾 1. BUSCA PAGAMENTO
+    // ============================================================
+    const payment = await new Payment(client).get({ id });
+
+    const status = payment.status;
+    const prefId = payment.preference_id || payment.external_reference;
+    const metadata = payment.metadata || {};
+
+    console.log(
+      `💰 Pagamento ${id} (${status}) | prefId: ${prefId} | metadata.userId: ${metadata.userId}`
+    );
+
+    if (!prefId) {
+      console.warn("⚠️ Webhook sem preference_id!");
+      return res.status(200).send("ok");
+    }
+
+    // ============================================================
+    // 📦 2. BUSCA ORDER CORRETA
+    // ============================================================
+    const order = await Order.findOneAndUpdate(
+      { mpPreferenceId: prefId },
+      { status },
+      { new: true }
+    );
+
+    if (!order) {
+      console.warn("⚠️ Order não encontrada para:", prefId);
+      return res.status(200).send("ok");
+    }
+
+    console.log("📦 Order encontrada:", order._id);
+
+    // cart correto:
+    const cart = metadata.cart || order.cart || [];
+
+    const userId = metadata.userId || order.userId;
+
+    if (!userId) {
+      console.warn("⚠️ Webhook sem userId");
+      return res.status(200).send("ok");
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      console.warn("⚠️ Usuário não encontrado:", userId);
+      return res.status(200).send("ok");
+    }
+
+    // ============================================================
+    // 🟢 3. PROCESSA APROVADO
+    // ============================================================
+    if (status === "approved") {
+      console.log("🏆 Pagamento aprovado — salvando números...");
+
+      for (const item of cart) {
+        const { raffleId, numeros, precoUnit } = item;
+
+        if (!raffleId || !Array.isArray(numeros)) continue;
+
+        // salva na rifa
+        await Raffle.findByIdAndUpdate(raffleId, {
+          $addToSet: { soldNumbers: { $each: numeros } }
+        });
+
+        // salva no usuário
+        user.purchases.push({
+          raffleId,
+          numeros,
+          precoUnit: precoUnit || item.price || 1,
+          paymentId: id,
+          date: new Date(),
+        });
+      }
+
+      await user.save();
+
+      console.log("✅ Números associados com sucesso.");
+      return res.status(200).send("ok");
+    }
+
+    // ============================================================
+    // ⏳ PENDENTE
+    // ============================================================
+    if (status === "pending") {
+      console.log(`⏳ Pagamento ${id} pendente`);
+      return res.status(200).send("ok");
+    }
+
+    // ============================================================
+    // ❌ NEGADO/CANCELADO
+    // ============================================================
+    if (["rejected", "cancelled"].includes(status)) {
+      console.log(`❌ Pagamento ${id} rejeitado/cancelado`);
+      return res.status(200).send("ok");
+    }
+
+    return res.status(200).send("ok");
+
+  } catch (err) {
+    console.error("💥 Erro no webhook:", err);
+    return res.status(200).send("ok");
+  }
+};
+
+// ============================================================
+// 🛠️ BlinkGames — routes/adminRoutes.js (v8.0 Produção)
+// ============================================================
+
+import express from "express";
+import {
+  getDashboard,
+  listUsers,
+  listRaffles,
+  listPayments,
+  exportCSV,
+} from "../controllers/adminController.js";
+import { createRaffle } from "../controllers/raffleController.js";
+import { adminMiddleware } from "../middleware/admin.js";
+
+const router = express.Router();
+
+// 🔹 Dashboard
+router.get("/dashboard", adminMiddleware, getDashboard);
+
+// 🔹 Listagens
+router.get("/users", adminMiddleware, listUsers);
+router.get("/raffles", adminMiddleware, listRaffles);
+router.get("/payments", adminMiddleware, listPayments);
+
+// 🔹 Exportação CSV
+router.get("/export", adminMiddleware, exportCSV);
+
+// 🔹 Criar rifa
+router.post("/rifas", adminMiddleware, createRaffle);
+
+export default router;
+
+// ============================================================
+// 🔐 BlinkGames — routes/authRoutes.js (v8.2 Produção Corrigida Final)
+// ============================================================
+
+import express from "express";
+import {
+  registerUser,
+  loginUser,
+  getProfile,
+  logoutUser,
+} from "../controllers/authController.js";
+import { verifyToken } from "../middleware/auth.js"; // ✅ CORRIGIDO: pasta 'middleware' (sem 's')
+
+const router = express.Router();
+
+// 🔹 Registro e login
+router.post("/register", registerUser);
+router.post("/login", loginUser);
+
+// 🔹 Perfil autenticado
+router.get("/me", verifyToken, getProfile);
+
+// 🔹 Logout simbólico
+router.post("/logout", logoutUser);
+
+export default router;
+
+// ============================================================
+// 💳 BlinkGames — routes/checkoutRoutes.js (v8.3 — Usando checkoutController CORRETO)
+// ============================================================
+
+import express from "express";
+import { createCheckout } from "../controllers/checkoutController.js"; // ✅ AQUI É O AJUSTE
+import { verifyToken } from "../middleware/auth.js";
+
+const router = express.Router();
+
+/**
+ * @route POST /api/checkout
+ * @desc Cria um Preference do Mercado Pago
+ * @access Privado (Token obrigatório)
+ */
+router.post("/", verifyToken, createCheckout);
+
+export default router;
+
+// ============================================================
+// 🧾 BlinkGames — routes/orderRoutes.js (v8.2 Corrigido 2025)
+// ============================================================
+
+import express from "express";
+import { getUserOrders } from "../controllers/orderController.js";
+import { createCheckout } from "../controllers/checkoutController.js";
+import { verifyToken } from "../middleware/auth.js";
+
+const router = express.Router();
+
+// ============================================================
+// 💳 Criar pedido (checkout)
+// ============================================================
+// Agora o checkout REAL vem do checkoutController.js
+router.post("/", verifyToken, createCheckout);
+
+// ============================================================
+// 📦 Buscar pedidos do usuário logado
+// ============================================================
+router.get("/my", verifyToken, getUserOrders);
+
+export default router;
+
+// ============================================================
+// 🎟️ BlinkGames — routes/raffleRoutes.js (v8.3 Produção Segura e Padronizada)
+// ============================================================
+
+import express from "express";
+import {
+  getRaffles,
+  getRaffleById,
+  createRaffle,
+  updateRaffle,
+  deactivateRaffle,
+  generateNumbers,
+  reserveNumbers,
+} from "../controllers/raffleController.js";
+import { verifyToken } from "../middleware/auth.js";
+
+const router = express.Router();
+
+// ============================================================
+// 🔹 Rotas públicas (listagem e consulta)
+// ============================================================
+router.get("/", getRaffles);
+router.get("/:id", getRaffleById);
+
+// ============================================================
+// 🔹 Admin / CRUD (somente usuários autenticados)
+// ============================================================
+router.post("/", verifyToken, createRaffle);
+router.put("/:id", verifyToken, updateRaffle);
+router.put("/:id/desativar", verifyToken, deactivateRaffle);
+
+// ============================================================
+// 🔹 Números (geração e reserva temporária)
+// ============================================================
+// Qualquer usuário pode gerar e reservar números *antes* do pagamento.
+// O backend agora não grava a reserva no banco, apenas confirma disponibilidade.
+router.post("/:id/generate", generateNumbers);
+router.post("/:id/reserve", reserveNumbers);
+
+export default router;
+
+// ============================================================
+// 📬 BlinkGames — routes/webhookRoutes.js (v9.0 — FIX DEFINITIVO MP)
+// ============================================================
+
+import express from "express";
+import { handleMercadoPagoWebhook } from "../controllers/webhookController.js";
+
+const router = express.Router();
+
+// ============================================================
+// 🔔 Webhook Mercado Pago → BlinkGames
+// ============================================================
+// Aceita QUALQUER tipo de payload que o Mercado Pago mandar.
+// Isso evita 404 e garante que o controller sempre será executado.
+router.post(
+  "/mercadopago",
+  express.json({ type: "*/*" }),
+  express.urlencoded({ extended: true }),
+  handleMercadoPagoWebhook
+);
+
+export default router;
+
+import mongoose from "mongoose";
+
+const orderSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId, // 🔥 Agora puxa User certo
+      ref: "User",
+      required: true,
+    },
+
+    mpPreferenceId: {
+      type: String, // 🔥 usado pra localizar no webhook
+      required: true,
+    },
+
+    mpPaymentId: {
+      type: String,
+      default: null, // 🔥 ID do pagamento aprovado
+    },
+
+    itens: [
+      {
+        raffleId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Raffle",
+        },
+        numeros: {
+          type: [Number], // 🔥 números comprados
+          default: [],
+        },
+        precoUnit: Number,
+        titulo: String,
+      },
+    ],
+
+    cart: {
+      type: Array, // 🔥 carrinho bruto — usado pelo front
+      default: [],
+    },
+
+    total: {
+      type: Number,
+      required: true,
+    },
+
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
+    },
+  },
+  { timestamps: true }
+);
+
+export default mongoose.model("Order", orderSchema);
+
+import mongoose from "mongoose";
+
+const paymentSchema = new mongoose.Schema(
+  {
+    paymentId: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    status: {
+      type: String,
+      required: true,
+    },
+    amount: {
+      type: Number,
+      required: true,
+    },
+    method: String,
+    payerEmail: String,
+    raw: Object, // snapshot completo retornado pelo Mercado Pago
+  },
+  { timestamps: true }
+);
+
+export default mongoose.model("Payment", paymentSchema);
+
+import mongoose from "mongoose";
+
+const raffleSchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    description: {
+      type: String,
+      required: true,
+    },
+    image: {
+      type: String,
+      required: true,
+    },
+    price: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    totalNumbers: {
+      type: Number,
+      required: true,
+    },
+
+    // 🔥 CAMPO CORRETO QUE O CHECKOUT + WEBHOOK USAM
+    soldNumbers: {
+      type: [Number],
+      default: [],
+    },
+
+    active: {
+      type: Boolean,
+      default: true,
+    },
+
+    drawDate: {
+      type: Date,
+    },
+  },
+  { timestamps: true }
+);
+
+export default mongoose.model("Raffle", raffleSchema);
+
+import mongoose from "mongoose";
+
+const reservationSchema = new mongoose.Schema(
+  {
+    raffle: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Raffle",
+      required: true,
+    },
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    numbers: {
+      type: [Number],
+      required: true,
+    },
+    expiresAt: {
+      type: Date,
+      required: true,
+      default: () => new Date(Date.now() + 15 * 60 * 1000), // 15 min
+    },
+  },
+  { timestamps: true }
+);
+
+// TTL index automático (libera números expirados)
+reservationSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+export default mongoose.model("Reservation", reservationSchema);
+
+// ============================================================
+// 👤 BlinkGames — User.js (corrigido e validado v6.8)
+// ============================================================
+
+import mongoose from "mongoose";
+
+const userSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+    },
+    password: {
+      type: String,
+      required: true,
+      select: false,
+    },
+    role: {
+      type: String,
+      enum: ["user", "admin"],
+      default: "user",
+    },
+    resetToken: String,
+    resetTokenExpires: Date,
+
+    // 🧾 Histórico de compras do usuário
+    purchases: [
+      {
+        raffleId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Raffle",
+        },
+        numeros: [Number],
+        precoUnit: Number,
+        paymentId: String,
+        date: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
+  },
+  { timestamps: true }
+);
+
+export default mongoose.model("User", userSchema);
+
+import dotenv from "dotenv";
+dotenv.config();
+
+export const adminMiddleware = (req, res, next) => {
+  // aceita por header OU por querystring
+  const headerKey = req.header("x-admin-key");
+  const queryKey  = req.query.key;
+
+  const okByKey =
+    (headerKey && headerKey === process.env.ADMIN_KEY) ||
+    (queryKey  && queryKey  === process.env.ADMIN_KEY);
+
+  if (okByKey) {
+    // marca como admin e segue
+    req.user = { ...(req.user || {}), isAdmin: true, via: "key" };
+    return next();
+  }
+
+  // caminho alternativo: JWT com flag de admin
+  if (req.user && (req.user.isAdmin || req.user.role === "admin")) {
+    return next();
+  }
+
+  return res.status(401).json({ error: "Unauthorized" });
+};
+
+
+// ============================================================
+// 🧠 BlinkGames — middlewares/auth.js (v7.6 — Produção Final)
+// ============================================================
+
+import jwt from "jsonwebtoken";
+
+export const verifyToken = (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    // ------------------------------------------------------------
+    // 🚨 1. Sem token → bloqueia
+    // ------------------------------------------------------------
+    if (!authHeader || authHeader === "Bearer undefined") {
+      return res.status(401).json({ error: "Token ausente." });
+    }
+
+    const parts = authHeader.split(" ");
+    if (parts.length !== 2) {
+      return res.status(401).json({ error: "Token malformado." });
+    }
+
+    const [scheme, token] = parts;
+
+    if (!/^Bearer$/i.test(scheme)) {
+      return res.status(401).json({ error: "Token inválido (formato)." });
+    }
+
+    if (!token || token === "undefined") {
+      return res.status(401).json({ error: "Token inválido." });
+    }
+
+    // ------------------------------------------------------------
+    // 🔐 2. Valida o token
+    // ------------------------------------------------------------
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Garante que sempre tenha userId
+    req.user = {
+      id: decoded.id || decoded._id,
+    };
+
+    // ------------------------------------------------------------
+    // 🚀 3. Continua fluxo
+    // ------------------------------------------------------------
+    return next();
+  } catch (err) {
+    console.error("Erro de autenticação JWT:", err.message);
+    return res.status(403).json({ error: "Token inválido ou expirado." });
+  }
+};
+
+export const errorHandler = (err, req, res, next) => {
+  console.error("Erro capturado:", err);
+
+  const statusCode = err.statusCode || 500;
+  const message = err.message || "Erro interno no servidor.";
+
+  res.status(statusCode).json({
+    success: false,
+    error: message,
+    stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+  });
+};
+import rateLimit from "express-rate-limit";
+
+// Limita 100 requisições por IP a cada 15 minutos
+export const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { error: "Muitas requisições. Tente novamente mais tarde." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+// ============================================================
+// 🌐 BlinkGames — config/cors.js (v7.8 Produção Corrigido)
+// ============================================================
+
+const allowedOrigins = [
+  "https://blinkgamesrifa.vercel.app",
+  "https://blinkgames-frontend.vercel.app",
+  "https://blinkgames-frontend-ibl2lz0wx-madhleens-projects.vercel.app",
+  "https://blinkgames-frontend-r0eo0jk1q-madhleens-projects.vercel.app",
+  "https://blinkgames-frontend-4qx5kvagp-madhleens-projects.vercel.app",
+  "https://blinkgames-frontend-qp3emlihr-madhleens-projects.vercel.app", // 🟢 novo domínio liberado
+  "http://localhost:5173",
+  "http://127.0.0.1:5500",
+];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      console.log("✅ CORS liberado para:", origin || "requisição interna");
+      callback(null, true);
+    } else {
+      console.warn("🚫 CORS bloqueado para:", origin);
+      callback(new Error("CORS não permitido"));
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-admin-key"],
+};
+
+export default corsOptions;
+
+import mongoose from "mongoose";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const connectDB = async () => {
+  try {
+    await mongoose.connect(process.env.MONGO_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    console.log("✅ MongoDB conectado com sucesso!");
+  } catch (error) {
+    console.error("❌ Erro ao conectar ao MongoDB:", error.message);
+    process.exit(1);
+  }
+};
+
+export default connectDB;
+import dotenv from "dotenv";
+import sgMail from "@sendgrid/mail";
+
+dotenv.config();
+
+// Configura a API Key do SendGrid
+sgMail.setApiKey(process.env.SMTP_PASS);
+
+export const transporter = {
+  sendMail: async ({ to, subject, html }) => {
+    try {
+      const msg = {
+        to,
+        from: process.env.SMTP_FROM,
+        subject,
+        html,
+      };
+      await sgMail.send(msg);
+      console.log(`📧 E-mail enviado com sucesso para ${to}`);
+    } catch (error) {
+      console.error("❌ Erro ao enviar e-mail via SendGrid:", error.response?.body || error);
+      throw error;
+    }
+  },
+};
+
+// ============================================================
+// 💳 BlinkGames — config/mercadoPago.js (v7.2 — Produção Final CORRETA)
+// ============================================================
+
+import { MercadoPagoConfig } from "mercadopago";
+import dotenv from "dotenv";
+dotenv.config();
+
+// ============================================================
+// 🔥 Cliente Mercado Pago — SDK v2
+// ============================================================
+//
+// ❗ IMPORTANTE:
+// NÃO criar Preference aqui!
+// Ela deve ser criada dentro do orderController
+// usando: new Preference(client)
+//
+// Se exportar Preference fixa, quebra o checkout!
+// ============================================================
+
+export const client = new MercadoPagoConfig({
+  accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN,
+  options: { sandbox: false }, // produção real
+});
+

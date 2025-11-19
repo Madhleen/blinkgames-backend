@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v16.0 — Produção multi-usuário segura)
+// 💳 BlinkGames — checkoutController.js (v16.0 — Order primeiro, seguro)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -18,36 +18,6 @@ export const createCheckout = async (req, res) => {
       return res.status(400).json({ error: "Carrinho vazio." });
     }
 
-    // ============================================================
-    // 💰 Total da compra
-    // ============================================================
-    const total = cart.reduce(
-      (acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 1),
-      0
-    );
-
-    // ============================================================
-    // 📦 1) Cria a Order primeiro no Mongo
-    // ============================================================
-    const order = await Order.create({
-      userId,
-      cart,
-      total,
-      status: "pending",
-    });
-
-    const orderRef = String(order._id); // vamos usar isso como external_reference
-
-    // ============================================================
-    // 🔹 Normaliza itens para Mercado Pago
-    // ============================================================
-    const items = cart.map((i) => ({
-      title: i.title || "Rifa BlinkGames",
-      unit_price: Number(i.price) || 1,
-      quantity: Number(i.quantity) || 1,
-      currency_id: "BRL",
-    }));
-
     const frontendURL =
       process.env.BASE_URL_FRONTEND || "https://blinkgamesrifa.vercel.app";
 
@@ -57,9 +27,48 @@ export const createCheckout = async (req, res) => {
     ).replace(/\/+$/, "");
 
     // ============================================================
-    // 🔥 2) Cria preferência no Mercado Pago
-    //      external_reference = order._id (AMARRAÇÃO FORTE)
-// ============================================================
+    // 🔹 Normaliza cart para salvar e mandar pro MP
+    // ============================================================
+    const normalizedCart = cart.map((item) => ({
+      raffleId: String(item.raffleId || item._id || item.id || ""),
+      title: item.title || "Rifa BlinkGames",
+      price: Number(item.price) || 0,
+      quantity: Number(item.quantity) || 1,
+      numeros: Array.isArray(item.numeros || item.numbers)
+        ? (item.numeros || item.numbers)
+        : [],
+    }));
+
+    const total = normalizedCart.reduce(
+      (sum, it) => sum + it.price * it.quantity,
+      0
+    );
+
+    // ============================================================
+    // 🧾 1) Cria Order PENDENTE primeiro
+    // ============================================================
+    const order = await Order.create({
+      userId,
+      cart: normalizedCart,
+      total,
+      status: "pending",
+    });
+
+    console.log("💾 Order criada antes do MP:", order._id.toString());
+
+    // ============================================================
+    // 🧮 2) Monta itens pro Mercado Pago
+    // ============================================================
+    const items = normalizedCart.map((i) => ({
+      title: i.title,
+      unit_price: i.price || 1,
+      quantity: i.quantity || 1,
+      currency_id: "BRL",
+    }));
+
+    // ============================================================
+    // 🔥 3) Cria preferência AMARRADA à Order
+    // ============================================================
     const preference = new Preference(client);
 
     const pref = await preference.create({
@@ -74,25 +83,22 @@ export const createCheckout = async (req, res) => {
         binary_mode: true,
         statement_descriptor: "BLINKGAMES",
 
-        // ⚡ PONTO CRÍTICO: agora é SEMPRE o ID da Order
-        external_reference: orderRef,
-
-        // Se o MP respeitar isso, melhor ainda:
-        metadata: {
-          userId: String(userId),
-          orderId: String(orderRef),
-          cart,
-        },
+        // 👇 Chave de ouro: é ISSO que o webhook usa
+        external_reference: String(order._id),
 
         notification_url: `${backendURL}/api/webhooks/mercadopago`,
+
+        // Ajuda o webhook / auditoria, mas o dono da verdade é a Order
+        metadata: {
+          userId: String(userId),
+          orderId: String(order._id),
+          // cart: normalizedCart, // se quiser muito, pode deixar, mas não é obrigatório
+        },
       },
     });
 
     const preferenceId =
-      pref?.id ||
-      pref?.body?.id ||
-      pref?.response?.id ||
-      null;
+      pref?.id || pref?.body?.id || pref?.response?.id || null;
 
     const initPoint =
       pref?.init_point ||
@@ -107,34 +113,34 @@ export const createCheckout = async (req, res) => {
       null;
 
     if (!preferenceId || !initPoint) {
-      console.error("❌ Falha ao criar preferência:", pref);
-      return res.status(500).json({ error: "Falha ao gerar preferência." });
+      console.error("❌ Falha ao criar preferência MP:", pref);
+      // Se quiser, você pode marcar a Order como erro aqui
+      order.status = "error";
+      await order.save();
+      return res
+        .status(500)
+        .json({ error: "Falha ao gerar preferência de pagamento." });
     }
 
     console.log("💳 Preferência criada:", {
+      orderId: order._id.toString(),
       preferenceId,
       initPoint,
       sandboxInitPoint,
-      external_reference: orderRef,
     });
 
     // ============================================================
-    // 🔗 3) Atualiza Order com o mpPreferenceId (controle interno)
-// ============================================================
+    // 📝 4) Atualiza Order com mpPreferenceId
+    // ============================================================
     order.mpPreferenceId = preferenceId;
     await order.save();
 
-    console.log("💾 Order ligada à preferência:", {
-      orderId: order._id,
-      mpPreferenceId: preferenceId,
-    });
-
     // ============================================================
-    // 🎯 4) Resposta final
+    // 🎯 5) Resposta final pro front
     // ============================================================
     return res.status(200).json({
       ok: true,
-      order_id: orderRef,
+      orderId: order._id,
       preference_id: preferenceId,
       init_point: initPoint,
       sandbox_init_point: sandboxInitPoint,

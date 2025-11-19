@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v15.2 — Removido update / Bad JSON)
+// 💳 BlinkGames — checkoutController.js (v16.0 — Produção multi-usuário segura)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -19,7 +19,27 @@ export const createCheckout = async (req, res) => {
     }
 
     // ============================================================
-    // 🔹 Normaliza itens do MP
+    // 💰 Total da compra
+    // ============================================================
+    const total = cart.reduce(
+      (acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 1),
+      0
+    );
+
+    // ============================================================
+    // 📦 1) Cria a Order primeiro no Mongo
+    // ============================================================
+    const order = await Order.create({
+      userId,
+      cart,
+      total,
+      status: "pending",
+    });
+
+    const orderRef = String(order._id); // vamos usar isso como external_reference
+
+    // ============================================================
+    // 🔹 Normaliza itens para Mercado Pago
     // ============================================================
     const items = cart.map((i) => ({
       title: i.title || "Rifa BlinkGames",
@@ -37,7 +57,8 @@ export const createCheckout = async (req, res) => {
     ).replace(/\/+$/, "");
 
     // ============================================================
-    // 🔥 1) Cria preferência (SEM UPDATE DEPOIS)
+    // 🔥 2) Cria preferência no Mercado Pago
+    //      external_reference = order._id (AMARRAÇÃO FORTE)
 // ============================================================
     const preference = new Preference(client);
 
@@ -52,12 +73,18 @@ export const createCheckout = async (req, res) => {
         auto_return: "approved",
         binary_mode: true,
         statement_descriptor: "BLINKGAMES",
-        external_reference: String(userId), // info extra, não usada pra buscar Order
-        notification_url: `${backendURL}/api/webhooks/mercadopago`,
+
+        // ⚡ PONTO CRÍTICO: agora é SEMPRE o ID da Order
+        external_reference: orderRef,
+
+        // Se o MP respeitar isso, melhor ainda:
         metadata: {
           userId: String(userId),
-          cart, // carrinho completo (opcional, webhook ainda tem order.cart)
+          orderId: String(orderRef),
+          cart,
         },
+
+        notification_url: `${backendURL}/api/webhooks/mercadopago`,
       },
     });
 
@@ -88,32 +115,26 @@ export const createCheckout = async (req, res) => {
       preferenceId,
       initPoint,
       sandboxInitPoint,
+      external_reference: orderRef,
     });
 
     // ============================================================
-    // 🧾 2) Salva Order no banco
-    // ============================================================
-    const total = cart.reduce(
-      (acc, i) =>
-        acc + Number(i.price || 0) * Number(i.quantity || 1),
-      0
-    );
+    // 🔗 3) Atualiza Order com o mpPreferenceId (controle interno)
+// ============================================================
+    order.mpPreferenceId = preferenceId;
+    await order.save();
 
-    await Order.create({
-      userId,
+    console.log("💾 Order ligada à preferência:", {
+      orderId: order._id,
       mpPreferenceId: preferenceId,
-      cart,
-      total,
-      status: "pending",
     });
 
-    console.log("💾 Order salva com sucesso:", preferenceId);
-
     // ============================================================
-    // 🎯 3) Resposta final
+    // 🎯 4) Resposta final
     // ============================================================
     return res.status(200).json({
       ok: true,
+      order_id: orderRef,
       preference_id: preferenceId,
       init_point: initPoint,
       sandbox_init_point: sandboxInitPoint,

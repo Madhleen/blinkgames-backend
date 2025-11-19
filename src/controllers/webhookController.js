@@ -1,5 +1,5 @@
 // ============================================================
-// 📩 BlinkGames — webhookController.js (v11.2 — Fallback por última Order pending)
+// 📩 BlinkGames — webhookController.js (v12.0 — Produção multi-usuário segura)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -34,26 +34,12 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     const mpPayment = new Payment(client);
     const payment = await mpPayment.get({ id });
 
-    // Em algumas versões do SDK os dados vêm em payment.body
     const data = payment.body || payment;
 
     const status = data.status;
     const metadata = data.metadata || {};
-    const externalRef = data.external_reference;
+    const externalRef = data.external_reference; // AQUI vem o order._id
     const prefFromPayment = data.preference_id;
-
-    // ============================================================
-    // 🎯 2. IDENTIFICA O prefId (o melhor que der)
-    // ============================================================
-    const prefId =
-      metadata.preferenceId || // se um dia o metadata passar a vir certo
-      metadata.preference_id ||
-      externalRef ||           // valor que está vindo hoje (69063d4...)
-      prefFromPayment;         // por via das dúvidas
-
-    console.log(
-      `💰 Pagamento ${id} (${status}) | prefId usado: ${prefId} | external_reference: ${externalRef} | mp.pref: ${prefFromPayment} | metadata.userId: ${metadata.userId}`
-    );
 
     console.log("🧾 Resumo MP payment:", {
       id: data.id,
@@ -63,47 +49,46 @@ export const handleMercadoPagoWebhook = async (req, res) => {
       metadata: data.metadata,
     });
 
-    // ============================================================
-    // 📦 3. TENTA CASAR A ORDER PELO mpPreferenceId
-    // ============================================================
-    let order = await Order.findOneAndUpdate(
-      { mpPreferenceId: prefId },
-      {
-        status,
-        mpPaymentId: String(id),
-      },
-      { new: true }
-    );
-
-    if (!order) {
-      console.warn(
-        "⚠️ Order não encontrada para prefId:",
-        prefId,
-        "— tentando fallback pela última 'pending'."
-      );
-
-      // Fallback: última Order pendente (seu fluxo é 1 usuário testando, isso é seguro)
-      order = await Order.findOne({ status: "pending" }).sort({ createdAt: -1 });
-
-      if (!order) {
-        console.warn("⚠️ Nenhuma Order pendente encontrada; ignorando pagamento.");
-        return res.status(200).send("ok");
-      }
-
-      order.status = status;
-      order.mpPaymentId = String(id);
-      await order.save();
+    if (!externalRef) {
+      console.warn("⚠️ Webhook sem external_reference, não dá pra casar Order.");
+      return res.status(200).send("ok");
     }
 
-    console.log("📦 Order usada no webhook:", order._id);
+    // ============================================================
+    // 📦 2. BUSCA Order DIRETO PELO external_reference (order._id)
+// ============================================================
+    let order;
+    try {
+      order = await Order.findById(externalRef);
+    } catch (e) {
+      console.warn("⚠️ external_reference não é um ObjectId válido:", externalRef);
+      return res.status(200).send("ok");
+    }
 
-    // carrinho certo: metadata.cart (novo fluxo) ou order.cart (fallback)
+    if (!order) {
+      console.warn("⚠️ Nenhuma Order encontrada para external_reference:", externalRef);
+      return res.status(200).send("ok");
+    }
+
+    const prevStatus = order.status; // pra evitar processar 2x
+
+    order.status = status;
+    order.mpPaymentId = String(id);
+    await order.save();
+
+    console.log("📦 Order atualizada via webhook:", {
+      orderId: order._id,
+      statusAntes: prevStatus,
+      statusDepois: status,
+    });
+
+    // carrinho correto
     const cart = metadata.cart || order.cart || [];
     const userId = metadata.userId || order.userId;
 
     if (!userId) {
       console.warn("⚠️ Webhook sem userId (nem metadata nem order)", {
-        prefId,
+        externalRef,
         orderId: order._id,
       });
       return res.status(200).send("ok");
@@ -116,9 +101,14 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     }
 
     // ============================================================
-    // 🟢 4. PROCESSA PAGAMENTO APROVADO
-    // ============================================================
+    // 🟢 3. PROCESSA APROVADO (uma única vez)
+// ============================================================
     if (status === "approved") {
+      if (prevStatus === "approved") {
+        console.log("ℹ️ Pagamento já tinha sido processado antes, ignorando duplicata.");
+        return res.status(200).send("ok");
+      }
+
       console.log("🏆 Pagamento aprovado — salvando números...");
 
       for (const item of cart) {
@@ -129,7 +119,7 @@ export const handleMercadoPagoWebhook = async (req, res) => {
           continue;
         }
 
-        // Atualiza rifa com os números vendidos
+        // Atualiza rifa com os números vendidos (sem duplicar)
         await Raffle.findByIdAndUpdate(raffleId, {
           $addToSet: { soldNumbers: { $each: numeros } },
         });
@@ -151,7 +141,7 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     }
 
     // ============================================================
-    // ⏳ 5. PENDENTE
+    // ⏳ 4. PENDENTE
     // ============================================================
     if (status === "pending") {
       console.log(`⏳ Pagamento ${id} pendente`);
@@ -159,18 +149,18 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     }
 
     // ============================================================
-    // ❌ 6. NEGADO/CANCELADO
+    // ❌ 5. NEGADO/CANCELADO
     // ============================================================
     if (["rejected", "cancelled"].includes(status)) {
       console.log(`❌ Pagamento ${id} rejeitado/cancelado`);
       return res.status(200).send("ok");
     }
 
-    // Qualquer outro status, só dá ok
+    // Qualquer outro status, só confirma
     return res.status(200).send("ok");
   } catch (err) {
     console.error("💥 Erro no webhook:", err);
-    // Sempre devolve 200 pro MP pra ele não ficar re-tentando infinito
+    // Sempre responde 200 pro MP não ficar reenviando infinitamente
     return res.status(200).send("ok");
   }
 };

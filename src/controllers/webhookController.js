@@ -1,5 +1,5 @@
 // ============================================================
-// 📩 BlinkGames — webhookController.js (v11 FINAL — Compatível c/ checkout v15)
+// 📩 BlinkGames — webhookController.js (v11.1 FINAL — Compatível c/ checkout v15)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -14,6 +14,10 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     const id = req.query.id || req.body.data?.id;
 
     if (!topic || !id) {
+      console.warn("⚠️ Webhook inválido: sem topic ou id", {
+        query: req.query,
+        body: req.body,
+      });
       return res.status(400).json({ error: "Webhook inválido." });
     }
 
@@ -25,46 +29,65 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     }
 
     // ============================================================
-    // 🧾 1. BUSCA PAGAMENTO
+    // 🧾 1. BUSCA PAGAMENTO NO MERCADO PAGO
     // ============================================================
-    const payment = await new Payment(client).get({ id });
+    const mpPayment = new Payment(client);
+    const payment = await mpPayment.get({ id });
 
-    const status = payment.status;
-    const prefId = payment.preference_id || payment.external_reference;
-    const metadata = payment.metadata || {};
+    // Em algumas versões do SDK os dados vêm em payment.body
+    const data = payment.body || payment;
+
+    const status = data.status;
+    const metadata = data.metadata || {};
+    const externalRef = data.external_reference;
+    const prefFromPayment = data.preference_id;
+
+    // ============================================================
+    // 🎯 2. IDENTIFICA O prefId CERTO (O MESMO QUE SALVAMOS NA ORDER)
+    // ============================================================
+    const prefId =
+      metadata.preferenceId ||       // 🔥 definido no checkoutController
+      metadata.preference_id ||      // fallback, se vier assim
+      externalRef ||                 // 🔥 external_reference que atualizamos
+      prefFromPayment;               // por último, o preference_id cru do MP
 
     console.log(
-      `💰 Pagamento ${id} (${status}) | prefId: ${prefId} | metadata.userId: ${metadata.userId}`
+      `💰 Pagamento ${id} (${status}) | prefId usado: ${prefId} | external_reference: ${externalRef} | mp.pref: ${prefFromPayment} | metadata.userId: ${metadata.userId}`
     );
 
     if (!prefId) {
-      console.warn("⚠️ Webhook sem preference_id!");
+      console.warn("⚠️ Pagamento sem prefId utilizável:", { id, data });
       return res.status(200).send("ok");
     }
 
     // ============================================================
-    // 📦 2. BUSCA ORDER CORRETA
+    // 📦 3. BUSCA / ATUALIZA A ORDER
     // ============================================================
     const order = await Order.findOneAndUpdate(
       { mpPreferenceId: prefId },
-      { status },
+      {
+        status,
+        mpPaymentId: String(id),
+      },
       { new: true }
     );
 
     if (!order) {
-      console.warn("⚠️ Order não encontrada para:", prefId);
+      console.warn("⚠️ Order não encontrada para prefId:", prefId);
       return res.status(200).send("ok");
     }
 
     console.log("📦 Order encontrada:", order._id);
 
-    // cart correto:
+    // carrinho certo: metadata.cart (novo fluxo) ou order.cart (fallback)
     const cart = metadata.cart || order.cart || [];
-
     const userId = metadata.userId || order.userId;
 
     if (!userId) {
-      console.warn("⚠️ Webhook sem userId");
+      console.warn("⚠️ Webhook sem userId (nem metadata nem order)", {
+        prefId,
+        orderId: order._id,
+      });
       return res.status(200).send("ok");
     }
 
@@ -75,7 +98,7 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     }
 
     // ============================================================
-    // 🟢 3. PROCESSA APROVADO
+    // 🟢 4. PROCESSA PAGAMENTO APROVADO
     // ============================================================
     if (status === "approved") {
       console.log("🏆 Pagamento aprovado — salvando números...");
@@ -83,14 +106,17 @@ export const handleMercadoPagoWebhook = async (req, res) => {
       for (const item of cart) {
         const { raffleId, numeros, precoUnit } = item;
 
-        if (!raffleId || !Array.isArray(numeros)) continue;
+        if (!raffleId || !Array.isArray(numeros) || numeros.length === 0) {
+          console.warn("⚠️ Item inválido no cart do webhook:", item);
+          continue;
+        }
 
-        // salva na rifa
+        // Atualiza rifa com os números vendidos
         await Raffle.findByIdAndUpdate(raffleId, {
-          $addToSet: { soldNumbers: { $each: numeros } }
+          $addToSet: { soldNumbers: { $each: numeros } },
         });
 
-        // salva no usuário
+        // Registra compra no usuário
         user.purchases.push({
           raffleId,
           numeros,
@@ -107,7 +133,7 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     }
 
     // ============================================================
-    // ⏳ PENDENTE
+    // ⏳ 5. PENDENTE
     // ============================================================
     if (status === "pending") {
       console.log(`⏳ Pagamento ${id} pendente`);
@@ -115,17 +141,18 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     }
 
     // ============================================================
-    // ❌ NEGADO/CANCELADO
+    // ❌ 6. NEGADO/CANCELADO
     // ============================================================
     if (["rejected", "cancelled"].includes(status)) {
       console.log(`❌ Pagamento ${id} rejeitado/cancelado`);
       return res.status(200).send("ok");
     }
 
+    // Qualquer outro status, só dá ok
     return res.status(200).send("ok");
-
   } catch (err) {
     console.error("💥 Erro no webhook:", err);
+    // Sempre devolve 200 pro MP pra ele não ficar re-tentando infinito
     return res.status(200).send("ok");
   }
 };

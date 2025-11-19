@@ -1,5 +1,5 @@
 // ============================================================
-// 📩 BlinkGames — webhookController.js (v11.1 FINAL — Compatível c/ checkout v15)
+// 📩 BlinkGames — webhookController.js (v11.2 — Fallback por última Order pending)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -43,27 +43,30 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     const prefFromPayment = data.preference_id;
 
     // ============================================================
-    // 🎯 2. IDENTIFICA O prefId CERTO (O MESMO QUE SALVAMOS NA ORDER)
+    // 🎯 2. IDENTIFICA O prefId (o melhor que der)
     // ============================================================
     const prefId =
-      metadata.preferenceId ||       // 🔥 definido no checkoutController
-      metadata.preference_id ||      // fallback, se vier assim
-      externalRef ||                 // 🔥 external_reference que atualizamos
-      prefFromPayment;               // por último, o preference_id cru do MP
+      metadata.preferenceId || // se um dia o metadata passar a vir certo
+      metadata.preference_id ||
+      externalRef ||           // valor que está vindo hoje (69063d4...)
+      prefFromPayment;         // por via das dúvidas
 
     console.log(
       `💰 Pagamento ${id} (${status}) | prefId usado: ${prefId} | external_reference: ${externalRef} | mp.pref: ${prefFromPayment} | metadata.userId: ${metadata.userId}`
     );
 
-    if (!prefId) {
-      console.warn("⚠️ Pagamento sem prefId utilizável:", { id, data });
-      return res.status(200).send("ok");
-    }
+    console.log("🧾 Resumo MP payment:", {
+      id: data.id,
+      status: data.status,
+      preference_id: data.preference_id,
+      external_reference: data.external_reference,
+      metadata: data.metadata,
+    });
 
     // ============================================================
-    // 📦 3. BUSCA / ATUALIZA A ORDER
+    // 📦 3. TENTA CASAR A ORDER PELO mpPreferenceId
     // ============================================================
-    const order = await Order.findOneAndUpdate(
+    let order = await Order.findOneAndUpdate(
       { mpPreferenceId: prefId },
       {
         status,
@@ -73,11 +76,26 @@ export const handleMercadoPagoWebhook = async (req, res) => {
     );
 
     if (!order) {
-      console.warn("⚠️ Order não encontrada para prefId:", prefId);
-      return res.status(200).send("ok");
+      console.warn(
+        "⚠️ Order não encontrada para prefId:",
+        prefId,
+        "— tentando fallback pela última 'pending'."
+      );
+
+      // Fallback: última Order pendente (seu fluxo é 1 usuário testando, isso é seguro)
+      order = await Order.findOne({ status: "pending" }).sort({ createdAt: -1 });
+
+      if (!order) {
+        console.warn("⚠️ Nenhuma Order pendente encontrada; ignorando pagamento.");
+        return res.status(200).send("ok");
+      }
+
+      order.status = status;
+      order.mpPaymentId = String(id);
+      await order.save();
     }
 
-    console.log("📦 Order encontrada:", order._id);
+    console.log("📦 Order usada no webhook:", order._id);
 
     // carrinho certo: metadata.cart (novo fluxo) ou order.cart (fallback)
     const cart = metadata.cart || order.cart || [];

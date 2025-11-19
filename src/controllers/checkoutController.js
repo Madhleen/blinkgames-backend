@@ -1,5 +1,5 @@
 // ============================================================
-// 💳 BlinkGames — checkoutController.js (v15.1 — FIX 2025)
+// 💳 BlinkGames — checkoutController.js (v15.2 — Removido update / Bad JSON)
 // ============================================================
 
 import Order from "../models/Order.js";
@@ -9,12 +9,14 @@ import { client } from "../config/mercadoPago.js";
 export const createCheckout = async (req, res) => {
   try {
     const userId = req.user?.id;
-    if (!userId)
+    if (!userId) {
       return res.status(401).json({ error: "Usuário não autenticado." });
+    }
 
     const { cart } = req.body;
-    if (!Array.isArray(cart) || cart.length === 0)
+    if (!Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Carrinho vazio." });
+    }
 
     // ============================================================
     // 🔹 Normaliza itens do MP
@@ -29,32 +31,33 @@ export const createCheckout = async (req, res) => {
     const frontendURL =
       process.env.BASE_URL_FRONTEND || "https://blinkgamesrifa.vercel.app";
 
-    const backendURL =
-      (process.env.BASE_URL_BACKEND ||
-        "https://blinkgames-backend-p4as.onrender.com").replace(/\/+$/, "");
+    const backendURL = (
+      process.env.BASE_URL_BACKEND ||
+      "https://blinkgames-backend-p4as.onrender.com"
+    ).replace(/\/+$/, "");
 
     // ============================================================
-    // 🔥 1) Cria preferência INICIAL
-    // ============================================================
+    // 🔥 1) Cria preferência (SEM UPDATE DEPOIS)
+// ============================================================
     const preference = new Preference(client);
 
     const pref = await preference.create({
       body: {
         items,
-
         back_urls: {
           success: `${frontendURL}/sucesso.html`,
           failure: `${frontendURL}/erro.html`,
           pending: `${frontendURL}/aguardando.html`,
         },
-
         auto_return: "approved",
         binary_mode: true,
         statement_descriptor: "BLINKGAMES",
-
-        external_reference: "TEMP",
-
+        external_reference: String(userId), // info extra, não usada pra buscar Order
         notification_url: `${backendURL}/api/webhooks/mercadopago`,
+        metadata: {
+          userId: String(userId),
+          cart, // carrinho completo (opcional, webhook ainda tem order.cart)
+        },
       },
     });
 
@@ -76,7 +79,8 @@ export const createCheckout = async (req, res) => {
       pref?.response?.sandbox_init_point ||
       null;
 
-    if (!preferenceId) {
+    if (!preferenceId || !initPoint) {
+      console.error("❌ Falha ao criar preferência:", pref);
       return res.status(500).json({ error: "Falha ao gerar preferência." });
     }
 
@@ -87,27 +91,11 @@ export const createCheckout = async (req, res) => {
     });
 
     // ============================================================
-    // 🔥 2) Adiciona metadata REAL no Mercado Pago
-    // ============================================================
-    await preference.update({
-      id: preferenceId,
-      body: {
-        external_reference: preferenceId,
-        metadata: {
-          userId: String(userId),
-          preferenceId: String(preferenceId),
-          cart, // 🔥 cart completo → usado no webhook
-        },
-      },
-    });
-
-    console.log("🔗 Preferência atualizada com metadata + external_reference");
-
-    // ============================================================
-    // 🧾 3) Salva Order no banco
+    // 🧾 2) Salva Order no banco
     // ============================================================
     const total = cart.reduce(
-      (acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 1),
+      (acc, i) =>
+        acc + Number(i.price || 0) * Number(i.quantity || 1),
       0
     );
 
@@ -122,7 +110,7 @@ export const createCheckout = async (req, res) => {
     console.log("💾 Order salva com sucesso:", preferenceId);
 
     // ============================================================
-    // 🎯 4) Resposta final
+    // 🎯 3) Resposta final
     // ============================================================
     return res.status(200).json({
       ok: true,
@@ -133,7 +121,10 @@ export const createCheckout = async (req, res) => {
   } catch (err) {
     console.error("💥 Erro no createCheckout:", err);
     return res.status(500).json({
-      error: err?.response?.data?.message || err?.message,
+      error:
+        err?.response?.data?.message ||
+        err?.message ||
+        "Erro interno no checkout.",
     });
   }
 };

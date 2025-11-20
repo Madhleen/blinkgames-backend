@@ -1,16 +1,51 @@
 import mongoose from "mongoose";
 
+const itemSchema = new mongoose.Schema(
+  {
+    raffleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Raffle",
+    },
+    numeros: {
+      type: [Number], // 🔥 números comprados
+      default: [],
+    },
+    precoUnit: Number,
+    titulo: String,
+  },
+  { _id: false }
+);
+
+const cartItemSchema = new mongoose.Schema(
+  {
+    raffleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Raffle",
+    },
+    title: String,
+    price: Number,
+    quantity: Number,
+    numeros: {
+      type: [Number],
+      default: [],
+    },
+  },
+  { _id: false }
+);
+
 const orderSchema = new mongoose.Schema(
   {
     userId: {
-      type: mongoose.Schema.Types.ObjectId, // 🔥 Agora puxa User certo
+      type: mongoose.Schema.Types.ObjectId, // 🔥 puxa User certo
       ref: "User",
       required: true,
     },
 
+    // 🔥 AGORA NÃO É MAIS OBRIGATÓRIO
+    // A Order nasce sem mpPreferenceId e depois o checkout preenche
     mpPreferenceId: {
-      type: String, // 🔥 usado pra localizar no webhook
-      required: true,
+      type: String,
+      default: null,
     },
 
     mpPaymentId: {
@@ -18,23 +53,15 @@ const orderSchema = new mongoose.Schema(
       default: null, // 🔥 ID do pagamento aprovado
     },
 
-    itens: [
-      {
-        raffleId: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "Raffle",
-        },
-        numeros: {
-          type: [Number], // 🔥 números comprados
-          default: [],
-        },
-        precoUnit: Number,
-        titulo: String,
-      },
-    ],
+    // 🔹 Estrutura antiga (mantida por compatibilidade)
+    itens: {
+      type: [itemSchema],
+      default: [],
+    },
 
+    // 🔹 Carrinho “bruto” salvo no checkout v16 (normalizedCart)
     cart: {
-      type: Array, // 🔥 carrinho bruto — usado pelo front
+      type: [cartItemSchema],
       default: [],
     },
 
@@ -43,10 +70,10 @@ const orderSchema = new mongoose.Schema(
       required: true,
     },
 
+    // 🔥 TIRA O ENUM PRA NÃO QUEBRAR COM STATUS DIFERENTE DO MP
     status: {
       type: String,
-      enum: ["pending", "approved", "rejected"],
-      default: "pending",
+      default: "pending", // pending | approved | rejected | cancelled | error | etc
     },
   },
   { timestamps: true }
